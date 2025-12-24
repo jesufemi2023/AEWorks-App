@@ -1,3 +1,4 @@
+
 export const generateId = () => {
     try {
         if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -69,17 +70,22 @@ export interface SystemMeta {
     googleClientId?: string; // The user's specific GCP Client ID
 }
 
+// Default Client ID used as fallback
 const DEFAULT_CLIENT_ID = '674092109435-96p21r75k1jgr7t1f0l4eohf5c49k23t.apps.googleusercontent.com';
 
 export const getSystemMeta = (): SystemMeta => {
     const raw = localStorage.getItem('system_meta');
+    
+    // Priority: 1. Environment Var, 2. Default hardcoded
+    const envClientId = (process.env as any).VITE_GOOGLE_CLIENT_ID;
+    
     const defaultMeta: SystemMeta = { 
         id: 'meta', 
         versionLabel: 'v4.5 Google Cloud', 
         syncApiKey: '',
         autoSync: true,
         backupLocation: 'Google_Drive_AEWorks',
-        googleClientId: DEFAULT_CLIENT_ID
+        googleClientId: envClientId || DEFAULT_CLIENT_ID
     };
     
     if (!raw) return defaultMeta;
@@ -87,6 +93,7 @@ export const getSystemMeta = (): SystemMeta => {
     try {
         const data = JSON.parse(raw);
         const meta = Array.isArray(data) ? data[0] : data;
+        // Merge stored meta with defaults, but ensure googleClientId isn't lost
         return { ...defaultMeta, ...meta };
     } catch {
         return defaultMeta;
