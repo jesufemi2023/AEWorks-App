@@ -40,7 +40,7 @@ export const saveData = <T,>(key: string, data: T[]): boolean => {
         });
         localStorage.setItem(key, JSON.stringify(dataWithMeta));
         
-        // Background push - non-blocking
+        // Background push - non-blocking but we will now handle the promise in the UI
         const meta = getSystemMeta();
         if (meta.driveAccessToken && navigator.onLine) {
             pushToCloud().catch(() => {});
@@ -67,10 +67,9 @@ export interface SystemMeta {
     backupLocation?: string;
     driveFileId?: string;
     driveAccessToken?: string;
-    googleClientId?: string; // The user's specific GCP Client ID
+    googleClientId?: string; 
 }
 
-// Default Client ID used as fallback
 const DEFAULT_CLIENT_ID = '674092109435-96p21r75k1jgr7t1f0l4eohf5c49k23t.apps.googleusercontent.com';
 
 export const getSystemMeta = (): SystemMeta => {
@@ -118,14 +117,14 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
 
     try {
         const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
-        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id, name, modifiedTime)`, {
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id, name, modifiedTime)`, {
             headers: getDriveHeaders(token)
         });
         
         if (!searchRes.ok) {
             if (searchRes.status === 401) {
                 updateSystemMeta({ driveAccessToken: undefined });
-                return { success: false, message: "Auth Session Expired. Please reconnect." };
+                return { success: false, message: "Auth Session Expired. Reconnect via Cloud Bridge." };
             }
             throw new Error(`Drive Error: ${searchRes.status}`);
         }
@@ -135,7 +134,7 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
 
         if (!fileId) {
             updateSystemMeta({ driveAccessToken: token });
-            return { success: true, message: "Cloud connected. No existing vault found. Initialize by clicking 'Commit' in the app." };
+            return { success: true, message: "Connected. Vault not found on Drive. Click 'Commit' to create it." };
         }
 
         const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
@@ -161,17 +160,18 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
             lastCloudSync: new Date().toISOString() 
         });
 
-        return { success: true, message: "Cloud Vault Merged." };
+        return { success: true, message: "Vault Merged." };
     } catch (err) {
         console.error("Sync Failure:", err);
-        return { success: false, message: "Sync Interrupted. Check connection." };
+        return { success: false, message: "Sync Failed: Cloud Unreachable." };
     }
 };
 
-export const pushToCloud = async () => {
+export const pushToCloud = async (): Promise<{success: boolean, message: string}> => {
     const meta = getSystemMeta();
     const token = meta.driveAccessToken;
-    if (!token || !navigator.onLine) return;
+    if (!token) return { success: false, message: "No active Drive link." };
+    if (!navigator.onLine) return { success: false, message: "Device is offline." };
 
     try {
         const fullDB: any = {
@@ -182,9 +182,10 @@ export const pushToCloud = async () => {
 
         let fileId = meta.driveFileId;
 
+        // Verify/Find file if ID is missing or check if it still exists
         if (!fileId) {
             const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
-            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
+            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}`, {
                 headers: getDriveHeaders(token)
             });
             const searchData = await searchRes.json();
@@ -192,26 +193,42 @@ export const pushToCloud = async () => {
         }
 
         if (!fileId) {
+            // Create New File
             const metadata = { name: MASTER_FILE_NAME, mimeType: 'application/json' };
             const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
                 method: 'POST',
                 headers: getDriveHeaders(token),
                 body: JSON.stringify(metadata)
             });
+            
+            if (!createRes.ok) throw new Error("Could not create vault file.");
+            
             const createData = await createRes.json();
             fileId = createData.id;
             updateSystemMeta({ driveFileId: fileId });
         }
 
-        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        // Upload Content
+        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
             method: 'PATCH',
             headers: getDriveHeaders(token),
             body: JSON.stringify(fullDB)
         });
 
-        updateSystemMeta({ lastCloudSync: new Date().toISOString() });
-    } catch (err) {
-        console.warn("Deferred: Drive write pending.");
+        if (!uploadRes.ok) {
+            if (uploadRes.status === 401) {
+                updateSystemMeta({ driveAccessToken: undefined });
+                return { success: false, message: "Session Expired. Please Re-authorize." };
+            }
+            throw new Error(`Upload Failed: ${uploadRes.status}`);
+        }
+
+        const now = new Date().toISOString();
+        updateSystemMeta({ lastCloudSync: now });
+        return { success: true, message: "Vault Synchronized to Drive." };
+    } catch (err: any) {
+        console.error("Cloud Push Failure:", err);
+        return { success: false, message: err.message || "Cloud Write Error." };
     }
 };
 
