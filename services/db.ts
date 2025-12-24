@@ -39,13 +39,6 @@ export const saveData = <T,>(key: string, data: T[]): boolean => {
             return item;
         });
         localStorage.setItem(key, JSON.stringify(dataWithMeta));
-        
-        // Background push - non-blocking but we will now handle the promise in the UI
-        const meta = getSystemMeta();
-        if (meta.driveAccessToken && navigator.onLine) {
-            pushToCloud().catch(() => {});
-        }
-        
         return true;
     } catch (error) {
         return false;
@@ -74,15 +67,13 @@ const DEFAULT_CLIENT_ID = '674092109435-96p21r75k1jgr7t1f0l4eohf5c49k23t.apps.go
 
 export const getSystemMeta = (): SystemMeta => {
     const raw = localStorage.getItem('system_meta');
-    const envClientId = (process.env as any).VITE_GOOGLE_CLIENT_ID;
-    
     const defaultMeta: SystemMeta = { 
         id: 'meta', 
         versionLabel: 'v4.5 Google Cloud', 
         syncApiKey: '',
         autoSync: true,
         backupLocation: 'Google_Drive_AEWorks',
-        googleClientId: envClientId || DEFAULT_CLIENT_ID
+        googleClientId: DEFAULT_CLIENT_ID
     };
     
     if (!raw) return defaultMeta;
@@ -124,7 +115,7 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         if (!searchRes.ok) {
             if (searchRes.status === 401) {
                 updateSystemMeta({ driveAccessToken: undefined });
-                return { success: false, message: "Auth Session Expired. Reconnect via Cloud Bridge." };
+                return { success: false, message: "Auth Session Expired. Re-authorize." };
             }
             throw new Error(`Drive Error: ${searchRes.status}`);
         }
@@ -133,8 +124,13 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         let fileId = searchData.files?.[0]?.id;
 
         if (!fileId) {
+            // First time connecting - we should push local data immediately
             updateSystemMeta({ driveAccessToken: token });
-            return { success: true, message: "Connected. Vault not found on Drive. Click 'Commit' to create it." };
+            const pushResult = await pushToCloud();
+            if (pushResult.success) {
+                return { success: true, message: "Cloud Bridge Created. Vault Initialized on Drive." };
+            }
+            return { success: true, message: "Authorized. Click 'Commit' to create your Drive vault." };
         }
 
         const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
@@ -160,7 +156,7 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
             lastCloudSync: new Date().toISOString() 
         });
 
-        return { success: true, message: "Vault Merged." };
+        return { success: true, message: "Vault Synchronized." };
     } catch (err) {
         console.error("Sync Failure:", err);
         return { success: false, message: "Sync Failed: Cloud Unreachable." };
@@ -182,7 +178,6 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
 
         let fileId = meta.driveFileId;
 
-        // Verify/Find file if ID is missing or check if it still exists
         if (!fileId) {
             const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
             const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}`, {
@@ -193,22 +188,18 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         }
 
         if (!fileId) {
-            // Create New File
             const metadata = { name: MASTER_FILE_NAME, mimeType: 'application/json' };
             const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
                 method: 'POST',
                 headers: getDriveHeaders(token),
                 body: JSON.stringify(metadata)
             });
-            
             if (!createRes.ok) throw new Error("Could not create vault file.");
-            
             const createData = await createRes.json();
             fileId = createData.id;
             updateSystemMeta({ driveFileId: fileId });
         }
 
-        // Upload Content
         const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
             method: 'PATCH',
             headers: getDriveHeaders(token),
@@ -218,17 +209,15 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         if (!uploadRes.ok) {
             if (uploadRes.status === 401) {
                 updateSystemMeta({ driveAccessToken: undefined });
-                return { success: false, message: "Session Expired. Please Re-authorize." };
+                return { success: false, message: "Session Expired." };
             }
             throw new Error(`Upload Failed: ${uploadRes.status}`);
         }
 
-        const now = new Date().toISOString();
-        updateSystemMeta({ lastCloudSync: now });
-        return { success: true, message: "Vault Synchronized to Drive." };
+        updateSystemMeta({ lastCloudSync: new Date().toISOString() });
+        return { success: true, message: "Synced to Drive." };
     } catch (err: any) {
-        console.error("Cloud Push Failure:", err);
-        return { success: false, message: err.message || "Cloud Write Error." };
+        return { success: false, message: err.message || "Write Error." };
     }
 };
 
@@ -240,12 +229,10 @@ const mergeDatasets = (dbKey: string, local: any[], remote: any[]) => {
         if (dbKey === 'clients') return item.name || item.id;
         return item.id;
     };
-
     remote.forEach(remoteItem => {
         const id = getStableId(remoteItem);
         if (id) map.set(id, remoteItem);
     });
-
     local.forEach(localItem => {
         const id = getStableId(localItem);
         if (!id) return;
@@ -254,6 +241,5 @@ const mergeDatasets = (dbKey: string, local: any[], remote: any[]) => {
             map.set(id, localItem);
         }
     });
-    
     return Array.from(map.values());
 };

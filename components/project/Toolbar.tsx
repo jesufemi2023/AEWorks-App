@@ -42,30 +42,63 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    const refreshAppState = () => {
+        setProjects(db.getData('projects'));
+        setClients(db.getData('clients'));
+        setContacts(db.getData('contacts'));
+        setCentres(db.getData('centres'));
+        setFramingMaterials(db.getData('framingMaterials'));
+        setFinishMaterials(db.getData('finishMaterials'));
+        setSystemMeta(db.getSystemMeta());
+    };
+
+    const handleGoogleAuth = () => {
+        const config = db.getSystemMeta();
+        if (!config.googleClientId) {
+            showNotification("Missing Google Client ID configuration.", "error");
+            return;
+        }
+
+        setIsSyncing(true);
+        try {
+            const client = (window as any).google.accounts.oauth2.initTokenClient({
+                client_id: config.googleClientId,
+                scope: 'https://www.googleapis.com/auth/drive.file',
+                callback: async (response: any) => {
+                    if (response.error) {
+                        setIsSyncing(false);
+                        showNotification(`Google Error: ${response.error}`, "error");
+                        return;
+                    }
+                    const result = await db.syncWithCloud(response.access_token);
+                    setIsSyncing(false);
+                    if (result.success) {
+                        showNotification(result.message, 'success');
+                        refreshAppState();
+                    } else {
+                        showNotification(result.message, 'warning');
+                    }
+                }
+            });
+            client.requestAccessToken();
+        } catch (e) {
+            setIsSyncing(false);
+            showNotification("Auth System Offline.", "error");
+        }
+    };
+
     const handleManualSync = async () => {
-        const meta = db.getSystemMeta();
-        if (!meta.driveAccessToken) {
-            showNotification("Authorization required. Re-link via Login screen.", "warning");
+        if (!systemMeta.driveAccessToken) {
+            handleGoogleAuth();
             return;
         }
         setIsSyncing(true);
         setSyncError(false);
-        
         const result = await db.syncWithCloud();
         setIsSyncing(false);
-        
         if (result.success) {
             showNotification(result.message, "success");
-            const newMeta = db.getSystemMeta();
-            setSystemMeta(newMeta);
-            
-            // Refresh local state
-            setProjects(db.getData('projects'));
-            setClients(db.getData('clients'));
-            setContacts(db.getData('contacts'));
-            setCentres(db.getData('centres'));
-            setFramingMaterials(db.getData('framingMaterials'));
-            setFinishMaterials(db.getData('finishMaterials'));
+            refreshAppState();
         } else {
             setSyncError(true);
             showNotification(result.message, "warning");
@@ -74,37 +107,31 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
 
     const handleSaveProject = async () => {
         if (isViewer) return;
-        
         if (!currentProject.projName || currentProject.projName.trim() === '') {
-            showNotification('Project Name Required before Committing.', 'error');
+            showNotification('Project Name Required.', 'error');
             return;
         }
-        
         if (!currentProject.projectCode) {
-            showNotification('Generating Project Code...', 'warning');
+            showNotification('Generating Code...', 'warning');
             return;
         }
 
         setIsCommitting(true);
-        
-        // 1. Save Locally
         updateProject({ ...currentProject, updatedAt: new Date().toISOString() });
         
-        // 2. Explicit Cloud Push if connected
         const meta = db.getSystemMeta();
         if (meta.driveAccessToken) {
             const cloudResult = await db.pushToCloud();
             if (cloudResult.success) {
-                showNotification(`Project "${currentProject.projName}" synced to Drive.`, 'success');
+                showNotification(`Synced to Drive.`, 'success');
             } else {
-                showNotification(`Saved Locally. Cloud Push: ${cloudResult.message}`, 'warning');
+                showNotification(`Saved Locally. Drive Sync: ${cloudResult.message}`, 'warning');
                 setSyncError(true);
             }
             setSystemMeta(db.getSystemMeta());
         } else {
-            showNotification(`State Saved Locally. (Cloud Offline)`, 'success');
+            showNotification(`Saved Locally. Click 'Connect Cloud' to backup to Drive.`, 'warning');
         }
-        
         setIsCommitting(false);
     };
     
@@ -119,18 +146,17 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
     const isCloudActive = !!systemMeta.driveAccessToken;
     const driveFileUrl = systemMeta.driveFileId ? `https://drive.google.com/file/d/${systemMeta.driveFileId}/view` : null;
 
-    // Determine badge color
-    let badgeClass = 'bg-slate-50 border-transparent text-slate-400';
+    let badgeClass = 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-600 shadow-inner';
     let dotClass = 'bg-slate-300';
     
     if (isSyncing || isCommitting) {
-        badgeClass = 'bg-blue-50 border-blue-200 text-blue-600 animate-pulse';
+        badgeClass = 'bg-blue-50 border-blue-200 text-blue-600 animate-pulse shadow-md';
         dotClass = 'bg-blue-500 animate-ping';
     } else if (syncError) {
-        badgeClass = 'bg-red-50 border-red-200 text-red-600';
+        badgeClass = 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100 shadow-md';
         dotClass = 'bg-red-500 shadow-[0_0_5px_#ef4444]';
     } else if (isCloudActive) {
-        badgeClass = 'bg-white border-slate-200 text-slate-700 hover:border-green-400 shadow-sm';
+        badgeClass = 'bg-white border-green-200 text-green-700 hover:border-green-400 shadow-sm';
         dotClass = 'bg-green-500 shadow-[0_0_5px_#10b981]';
     }
 
@@ -139,14 +165,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
             <div className="flex flex-row md:flex-wrap gap-1.5 mb-2 bg-white p-1.5 rounded-xl shadow-sm justify-start md:justify-between items-center relative z-[40] border border-slate-200">
                 <div className="flex flex-row flex-nowrap gap-1.5 items-center flex-grow overflow-x-auto no-scrollbar">
                     {!isViewer && (
-                        <Button 
-                            onClick={handleSaveProject} 
-                            variant="primary" 
-                            icon={isCommitting ? "fas fa-sync animate-spin" : "fas fa-save"} 
-                            disabled={isCommitting}
-                            size="sm" 
-                            className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black"
-                        >
+                        <Button onClick={handleSaveProject} variant="primary" icon={isCommitting ? "fas fa-sync animate-spin" : "fas fa-save"} disabled={isCommitting} size="sm" className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black">
                             {isCommitting ? 'Pushing...' : 'Commit'}
                         </Button>
                     )}
@@ -159,42 +178,28 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                 <div className="flex items-center gap-3">
                     <div className="flex flex-col items-end">
                         <div className="flex items-center gap-1">
-                            <button 
-                                onClick={handleManualSync} 
-                                disabled={isSyncing || isCommitting}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${badgeClass}`}
-                                title={isCloudActive ? "Sync with Google Drive" : "No Cloud Bridge Active"}
-                            >
+                            <button onClick={handleManualSync} disabled={isSyncing || isCommitting} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${badgeClass}`}>
                                 <div className={`w-1.5 h-1.5 rounded-full ${dotClass}`}></div>
                                 <span className="hidden sm:inline">
-                                    {isSyncing ? 'Syncing...' : syncError ? 'Check Link' : isCloudActive ? 'Pull Cloud' : 'Offline'}
+                                    {isSyncing ? 'Syncing...' : syncError ? 'Re-link' : isCloudActive ? 'Sync Cloud' : 'Connect Cloud'}
                                 </span>
                             </button>
                             {driveFileUrl && (
-                                <a 
-                                    href={driveFileUrl} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
-                                    title="View Master Vault on Google Drive"
-                                >
+                                <a href={driveFileUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" title="Open in Google Drive">
                                     <Icon name="fas fa-external-link-alt" className="text-[10px]" />
                                 </a>
                             )}
                         </div>
                         {systemMeta.lastCloudSync && isCloudActive && !syncError && (
                             <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">
-                                Saved: {new Date(systemMeta.lastCloudSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                Last Sync: {new Date(systemMeta.lastCloudSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                         )}
                     </div>
 
                     {!isViewer && (
                         <div className="relative" ref={dbMenuRef}>
-                            <button 
-                                onClick={() => setIsDbMenuOpen(!isDbMenuOpen)} 
-                                className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-all ${isDbMenuOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}
-                            >
+                            <button onClick={() => setIsDbMenuOpen(!isDbMenuOpen)} className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-all ${isDbMenuOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}>
                                 <Icon name="fas fa-database" />
                             </button>
                             {isDbMenuOpen && (
@@ -215,7 +220,6 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                     )}
                 </div>
             </div>
-            
             <ProjectListModal isOpen={isProjectListOpen} onClose={() => setIsProjectListOpen(false)} onLoadProject={handleLoadProject} projects={projects} />
         </>
     );
