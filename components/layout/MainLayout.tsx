@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { View, Project, Client, Contact, Centre, FramingMaterial, FinishMaterial, CostingVariables, Job } from '../../types';
 import Header from './Header';
@@ -16,6 +17,7 @@ import ForcePasswordChangeModal from '../auth/ForcePasswordChangeModal';
 import { ProjectContextProvider } from '../../context/ProjectContext';
 import { COST_VARS_STRUCTURE, NIGERIAN_CITIES } from '../../constants';
 import * as db from '../../services/db';
+import { generateProjectCode } from '../../services/utils';
 import Button from '../ui/Button';
 import Icon from '../ui/Icon';
 import { useAppContext } from '../../hooks/useAppContext';
@@ -147,6 +149,18 @@ const MainLayout: React.FC<MainLayoutProps> = ({ onBack }) => {
 
         setup();
     }, [showNotification, currentUser]);
+
+    // Centralized Project Code Generation
+    useEffect(() => {
+        if (currentProject.projName.trim() !== '') {
+            const generatedCode = generateProjectCode(currentProject.projName, currentProject.jobsThisYear, currentProject.year);
+            if (generatedCode !== currentProject.projectCode) {
+                setCurrentProject(prev => ({ ...prev, projectCode: generatedCode }));
+            }
+        } else if (currentProject.projectCode !== '') {
+            setCurrentProject(prev => ({ ...prev, projectCode: '' }));
+        }
+    }, [currentProject.projName, currentProject.jobsThisYear, currentProject.year]);
 
     useEffect(() => {
         if (autosaveTimerRef.current) {

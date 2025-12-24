@@ -108,7 +108,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                     setIsLoading(false);
                     
                     if (result.success) {
-                        showNotification('Master Vault Bonded.', 'success');
+                        showNotification(result.message, 'success');
                         setActiveTab('login');
                         setLogo(db.getSystemLogo());
                     } else {
@@ -118,7 +118,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                 error_callback: (err: any) => {
                     console.error("GIS Error:", err);
                     setIsLoading(false);
-                    showNotification("Blocked: Check 'Test Users' in Google Console.", "error");
+                    setShowInstructions(true);
+                    showNotification("Blocked: Please check the 'Test Users' guide below.", "error");
                 }
             });
             client.requestAccessToken();
@@ -181,32 +182,24 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                                     {currentOrigin}
                                 </code>
                                 <p className="text-[8px] text-blue-600 mt-2 font-bold uppercase leading-tight italic">
-                                    * Copy this into "Authorized JavaScript Origins" in GCP Console.
+                                    * Add this to "Authorized JavaScript Origins" in GCP Console.
                                 </p>
                             </div>
                             
-                            <div className="p-4 bg-red-50 border border-red-100 rounded-2xl">
-                                <h4 className="text-[9px] font-black text-red-900 uppercase tracking-tight mb-1 flex items-center gap-2">
-                                    <Icon name="fas fa-user-lock" /> Fixing "Access Blocked"
-                                </h4>
-                                <p className="text-[9px] text-red-700 leading-tight font-bold">
-                                    If you see "Access Blocked", your email is not a "Test User". 
-                                    <button onClick={() => setShowInstructions(!showInstructions)} className="ml-1 text-red-900 underline font-black">Fix It Now</button>
-                                </p>
-                            </div>
-
                             {showInstructions && (
-                                <div className="p-4 bg-slate-900 text-white rounded-2xl text-[9px] font-bold space-y-3 animate-fade-in border border-slate-800">
-                                    <div className="space-y-1">
-                                        <p className="text-blue-400 uppercase font-black">Google Console Requirements:</p>
-                                        <ol className="list-decimal list-inside space-y-1 opacity-90">
-                                            <li>Go to **OAuth Consent Screen** in GCP</li>
-                                            <li>Under **Test Users**, click **Add Users**</li>
-                                            <li>Enter your Gmail and Save</li>
-                                            <li>Ensure **Publishing Status** is "Testing"</li>
-                                        </ol>
+                                <div className="p-4 bg-red-600 text-white rounded-2xl shadow-lg animate-fade-in">
+                                    <h4 className="text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
+                                        <Icon name="fas fa-exclamation-triangle" /> Critical Fix: Test Users
+                                    </h4>
+                                    <p className="text-[9px] font-bold leading-relaxed mb-3 opacity-90">
+                                        Google blocks new connections until your email is added as a "Test User".
+                                    </p>
+                                    <div className="bg-white/10 p-2 rounded-lg space-y-2 text-[8px] font-black uppercase tracking-tight">
+                                        <p>1. Go to "OAuth Consent Screen" in GCP</p>
+                                        <p>2. Scroll to "Test Users"</p>
+                                        <p>3. Add your Gmail address and Save</p>
                                     </div>
-                                    <button onClick={handleResetConfig} className="w-full py-2 bg-slate-800 text-slate-400 rounded-lg hover:text-white border border-slate-700 uppercase tracking-widest text-[8px] font-black">Reset To Defaults</button>
+                                    <button onClick={() => setShowInstructions(false)} className="mt-3 w-full py-2 bg-white text-red-600 rounded-lg text-[9px] font-black uppercase">I've Added My Email</button>
                                 </div>
                             )}
                             
@@ -218,6 +211,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                             <Button onClick={handleGoogleDriveSync} variant="success" size="lg" disabled={isLoading} icon={isLoading ? "fas fa-sync animate-spin" : "fab fa-google"} className="w-full py-4 text-[10px] tracking-[0.2em] uppercase font-black rounded-2xl shadow-xl shadow-green-600/20 bg-slate-900 border-none">
                                 {isLoading ? 'Verifying...' : 'Authorize Drive Bridge'}
                             </Button>
+                            
+                            <button onClick={handleResetConfig} className="w-full text-center text-[8px] font-black text-slate-300 uppercase hover:text-red-400 transition-colors py-2 tracking-widest">Reset Identity Config</button>
                         </div>
                     )}
                 </div>

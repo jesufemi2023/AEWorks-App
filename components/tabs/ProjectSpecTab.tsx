@@ -1,8 +1,8 @@
+
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import TabContent from './TabContent';
 import { useProjectContext } from '../../hooks/useProjectContext';
 import { NIGERIAN_CITIES, STATUS_STAGES } from '../../constants';
-import { generateProjectCode } from '../../services/utils';
 import Button from '../ui/Button';
 import Icon from '../ui/Icon';
 import { useAppContext } from '../../hooks/useAppContext';
@@ -47,15 +47,6 @@ const ProjectSpecTab: React.FC = () => {
         const { id, value } = e.target;
         setCurrentProject(prev => ({...prev, [id]: value === '' ? 0 : parseInt(value, 10) }));
     }
-
-    const updateProjectCode = useCallback(() => {
-        const newCode = generateProjectCode(currentProject.projName, currentProject.jobsThisYear, currentProject.year);
-        setCurrentProject(p => ({...p, projectCode: newCode}));
-    }, [currentProject.projName, currentProject.jobsThisYear, currentProject.year, setCurrentProject]);
-    
-    useEffect(() => {
-        updateProjectCode();
-    }, [updateProjectCode]);
 
     useEffect(() => {
         if (isNewCustomerMode) return;

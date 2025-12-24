@@ -75,8 +75,6 @@ const DEFAULT_CLIENT_ID = '674092109435-96p21r75k1jgr7t1f0l4eohf5c49k23t.apps.go
 
 export const getSystemMeta = (): SystemMeta => {
     const raw = localStorage.getItem('system_meta');
-    
-    // Priority: 1. Environment Var, 2. Default hardcoded
     const envClientId = (process.env as any).VITE_GOOGLE_CLIENT_ID;
     
     const defaultMeta: SystemMeta = { 
@@ -93,7 +91,6 @@ export const getSystemMeta = (): SystemMeta => {
     try {
         const data = JSON.parse(raw);
         const meta = Array.isArray(data) ? data[0] : data;
-        // Merge stored meta with defaults, but ensure googleClientId isn't lost
         return { ...defaultMeta, ...meta };
     } catch {
         return defaultMeta;
@@ -113,9 +110,6 @@ const getDriveHeaders = (token: string) => ({
     'Content-Type': 'application/json'
 });
 
-/**
- * Enhanced Google Drive Sync: Robust file discovery across shared drives
- */
 export const syncWithCloud = async (providedToken?: string): Promise<{success: boolean, message: string}> => {
     const meta = getSystemMeta();
     const token = providedToken || meta.driveAccessToken;
@@ -123,7 +117,6 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
     if (!token) return { success: false, message: "Drive Authorization Required." };
 
     try {
-        // Search including all drives and shared items
         const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
         const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id, name, modifiedTime)`, {
             headers: getDriveHeaders(token)
@@ -141,23 +134,18 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         let fileId = searchData.files?.[0]?.id;
 
         if (!fileId) {
-            // Check if we are trying to initialize for the first time
-            if (providedToken) {
-                return { success: true, message: "Connected. Initializing first-time vault..." };
-            }
-            return { success: false, message: "Master Vault file not found on Drive." };
+            updateSystemMeta({ driveAccessToken: token });
+            return { success: true, message: "Cloud connected. No existing vault found. Initialize by clicking 'Commit' in the app." };
         }
 
-        // Download content using 'alt=media'
         const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
             headers: getDriveHeaders(token)
         });
         
-        if (!fileRes.ok) throw new Error("File Download Failed.");
+        if (!fileRes.ok) throw new Error("Vault Download Failed.");
         
         const actualData = await fileRes.json();
 
-        // Atomic merge with prioritization of newer data
         DB_KEYS.forEach(key => {
             const local = getData<any>(key);
             const remote = actualData[key] || [];
@@ -173,16 +161,13 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
             lastCloudSync: new Date().toISOString() 
         });
 
-        return { success: true, message: "Cloud Sync Successful." };
+        return { success: true, message: "Cloud Vault Merged." };
     } catch (err) {
         console.error("Sync Failure:", err);
-        return { success: false, message: "Drive link interrupted. Check network or permissions." };
+        return { success: false, message: "Sync Interrupted. Check connection." };
     }
 };
 
-/**
- * Background Persistence to Google Drive
- */
 export const pushToCloud = async () => {
     const meta = getSystemMeta();
     const token = meta.driveAccessToken;
@@ -197,7 +182,6 @@ export const pushToCloud = async () => {
 
         let fileId = meta.driveFileId;
 
-        // Verify/Find fileId if missing
         if (!fileId) {
             const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
             const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
@@ -208,7 +192,6 @@ export const pushToCloud = async () => {
         }
 
         if (!fileId) {
-            // Create new Master Vault if not found
             const metadata = { name: MASTER_FILE_NAME, mimeType: 'application/json' };
             const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
                 method: 'POST',
@@ -220,14 +203,13 @@ export const pushToCloud = async () => {
             updateSystemMeta({ driveFileId: fileId });
         }
 
-        // Upload media content via PATCH
         await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
             method: 'PATCH',
             headers: getDriveHeaders(token),
             body: JSON.stringify(fullDB)
         });
 
-        console.log("Vault Update Committed to Drive.");
+        updateSystemMeta({ lastCloudSync: new Date().toISOString() });
     } catch (err) {
         console.warn("Deferred: Drive write pending.");
     }

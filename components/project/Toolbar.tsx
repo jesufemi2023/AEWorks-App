@@ -23,6 +23,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
     const [isProjectListOpen, setIsProjectListOpen] = useState(false);
     const [isDbMenuOpen, setIsDbMenuOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [syncError, setSyncError] = useState(false);
     const [lastSyncTime, setLastSyncTime] = useState<string | null>(db.getSystemMeta().lastCloudSync || null);
     
     const dbMenuRef = useRef<HTMLDivElement>(null);
@@ -47,14 +48,17 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
             return;
         }
         setIsSyncing(true);
+        setSyncError(false);
+        
         const result = await db.syncWithCloud();
         setIsSyncing(false);
+        
         if (result.success) {
             showNotification(result.message, "success");
             const newMeta = db.getSystemMeta();
             setLastSyncTime(newMeta.lastCloudSync || null);
             
-            // Refresh local state to reflect synced data
+            // Refresh local state
             setProjects(db.getData('projects'));
             setClients(db.getData('clients'));
             setContacts(db.getData('contacts'));
@@ -62,18 +66,26 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
             setFramingMaterials(db.getData('framingMaterials'));
             setFinishMaterials(db.getData('finishMaterials'));
         } else {
+            setSyncError(true);
             showNotification(result.message, "warning");
         }
     };
 
     const handleSaveProject = () => {
         if (isViewer) return;
-        if (!currentProject.projectCode) {
-            showNotification('Project Code Required.', 'error');
+        
+        if (!currentProject.projName || currentProject.projName.trim() === '') {
+            showNotification('Project Name Required before Committing.', 'error');
             return;
         }
+        
+        if (!currentProject.projectCode) {
+            showNotification('Generating Project Code... Please retry in a moment.', 'warning');
+            return;
+        }
+
         updateProject({ ...currentProject, updatedAt: new Date().toISOString() });
-        showNotification(`Project State Persistent.`);
+        showNotification(`State Committed.`, 'success');
     };
     
     const handleLoadProject = (projectCode: string) => {
@@ -84,16 +96,22 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         }
     };
 
-    const ManageButton = ({ onClick, icon, label, colorClass }: any) => (
-        <button 
-            onClick={() => { onClick(); setIsDbMenuOpen(false); }} 
-            className="w-full text-left px-3 py-2.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors border-b border-slate-50 last:border-0 font-bold"
-        >
-            <Icon name={icon} className={`${colorClass} w-4 text-center`}/> {label}
-        </button>
-    );
-
     const isCloudActive = !!db.getSystemMeta().driveAccessToken;
+
+    // Determine badge color
+    let badgeClass = 'bg-slate-50 border-transparent text-slate-400';
+    let dotClass = 'bg-slate-300';
+    
+    if (isSyncing) {
+        badgeClass = 'bg-blue-50 border-blue-200 text-blue-600 animate-pulse';
+        dotClass = 'bg-blue-500 animate-ping';
+    } else if (syncError) {
+        badgeClass = 'bg-red-50 border-red-200 text-red-600';
+        dotClass = 'bg-red-500 shadow-[0_0_5px_#ef4444]';
+    } else if (isCloudActive) {
+        badgeClass = 'bg-white border-slate-200 text-slate-700 hover:border-green-400 shadow-sm';
+        dotClass = 'bg-green-500 shadow-[0_0_5px_#10b981]';
+    }
 
     return (
         <>
@@ -111,18 +129,16 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                         <button 
                             onClick={handleManualSync} 
                             disabled={isSyncing}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${
-                                isSyncing ? 'bg-blue-50 border-blue-200 text-blue-600 cursor-wait' : 
-                                isCloudActive ? 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 shadow-sm' : 
-                                'bg-slate-50 border-transparent text-slate-400 cursor-not-allowed'
-                            }`}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${badgeClass}`}
                         >
-                            <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : isCloudActive ? 'bg-green-500 shadow-[0_0_5px_#10b981]' : 'bg-slate-300'}`}></div>
-                            <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : isCloudActive ? 'Pull Cloud' : 'No Drive Link'}</span>
+                            <div className={`w-1.5 h-1.5 rounded-full ${dotClass}`}></div>
+                            <span className="hidden sm:inline">
+                                {isSyncing ? 'Syncing...' : syncError ? 'Sync Failed' : isCloudActive ? 'Pull Cloud' : 'Offline'}
+                            </span>
                         </button>
-                        {lastSyncTime && isCloudActive && (
+                        {lastSyncTime && isCloudActive && !syncError && (
                             <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">
-                                Last Sync: {new Date(lastSyncTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                Saved: {new Date(lastSyncTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                         )}
                     </div>
@@ -138,13 +154,13 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                             {isDbMenuOpen && (
                                 <div className="absolute top-[calc(100%+4px)] right-0 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[100] animate-fade-in origin-top-right">
                                     <div className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50 mb-1">Repositories</div>
-                                    <ManageButton onClick={() => setView(View.MANAGE_CLIENTS)} icon="fas fa-building" label="Clients" colorClass="text-indigo-600"/>
-                                    <ManageButton onClick={() => setView(View.MANAGE_CONTACTS)} icon="fas fa-address-card" label="Personnel" colorClass="text-teal-600"/>
-                                    <ManageButton onClick={() => setView(View.MANAGE_MATERIALS)} icon="fas fa-boxes" label="Materials" colorClass="text-rose-600"/>
+                                    <button onClick={() => { setView(View.MANAGE_CLIENTS); setIsDbMenuOpen(false); }} className="w-full text-left px-3 py-2.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-3 font-bold border-b border-slate-50"><Icon name="fas fa-building" className="text-indigo-600 w-4"/> Clients</button>
+                                    <button onClick={() => { setView(View.MANAGE_CONTACTS); setIsDbMenuOpen(false); }} className="w-full text-left px-3 py-2.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-3 font-bold border-b border-slate-50"><Icon name="fas fa-address-card" className="text-teal-600 w-4"/> Personnel</button>
+                                    <button onClick={() => { setView(View.MANAGE_MATERIALS); setIsDbMenuOpen(false); }} className="w-full text-left px-3 py-2.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-3 font-bold border-b border-slate-50"><Icon name="fas fa-boxes" className="text-rose-600 w-4"/> Materials</button>
                                     {isAdmin && (
                                         <>
                                             <div className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50 mt-1 mb-1">Control</div>
-                                            <ManageButton onClick={() => setView(View.MANAGE_USERS)} icon="fas fa-user-shield" label="Access Keys" colorClass="text-blue-700"/>
+                                            <button onClick={() => { setView(View.MANAGE_USERS); setIsDbMenuOpen(false); }} className="w-full text-left px-3 py-2.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-3 font-bold"><Icon name="fas fa-user-shield" className="text-blue-700 w-4"/> Access Keys</button>
                                         </>
                                     )}
                                 </div>
