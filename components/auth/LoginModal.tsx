@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, AuthUser } from '../../types';
 import Button from '../ui/Button';
@@ -18,6 +19,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
     const [logo, setLogo] = useState<string | null>(db.getSystemLogo());
     const [config, setConfig] = useState(db.getSystemMeta());
     const { showNotification } = useAppContext();
+
+    const currentOrigin = window.location.origin;
 
     useEffect(() => {
         const localUsers = db.getData('users');
@@ -65,6 +68,11 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
             setConfig(freshMeta);
             showNotification("Configuration Reset.");
         }
+    };
+
+    const copyOrigin = () => {
+        navigator.clipboard.writeText(currentOrigin);
+        showNotification("Origin URL copied to clipboard!");
     };
 
     const handleGoogleDriveSync = () => {
@@ -163,6 +171,19 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                                 <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Cloud Bridge</h3>
                                 <p className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">Configure Remote Sync</p>
                             </div>
+
+                            <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl mb-2">
+                                <h4 className="text-[9px] font-black text-blue-900 uppercase tracking-tight mb-2 flex items-center justify-between">
+                                    <span>Authorized Origin</span>
+                                    <button onClick={copyOrigin} className="text-blue-600 hover:text-blue-800"><Icon name="fas fa-copy" /></button>
+                                </h4>
+                                <code className="block text-[10px] font-mono font-bold text-blue-700 break-all bg-white p-2 rounded-lg border border-blue-200">
+                                    {currentOrigin}
+                                </code>
+                                <p className="text-[8px] text-blue-600 mt-2 font-bold uppercase leading-tight italic">
+                                    * Copy this into "Authorized JavaScript Origins" in GCP Console.
+                                </p>
+                            </div>
                             
                             <div className="p-4 bg-red-50 border border-red-100 rounded-2xl">
                                 <h4 className="text-[9px] font-black text-red-900 uppercase tracking-tight mb-1 flex items-center gap-2">
@@ -181,8 +202,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                                         <ol className="list-decimal list-inside space-y-1 opacity-90">
                                             <li>Go to **OAuth Consent Screen** in GCP</li>
                                             <li>Under **Test Users**, click **Add Users**</li>
-                                            <li>Enter <span className="text-blue-300">olaabe2012@gmail.com</span> and Save</li>
-                                            <li>Ensure **Publishing Status** is "Testing" or "Production"</li>
+                                            <li>Enter your Gmail and Save</li>
+                                            <li>Ensure **Publishing Status** is "Testing"</li>
                                         </ol>
                                     </div>
                                     <button onClick={handleResetConfig} className="w-full py-2 bg-slate-800 text-slate-400 rounded-lg hover:text-white border border-slate-700 uppercase tracking-widest text-[8px] font-black">Reset To Defaults</button>
@@ -197,10 +218,6 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                             <Button onClick={handleGoogleDriveSync} variant="success" size="lg" disabled={isLoading} icon={isLoading ? "fas fa-sync animate-spin" : "fab fa-google"} className="w-full py-4 text-[10px] tracking-[0.2em] uppercase font-black rounded-2xl shadow-xl shadow-green-600/20 bg-slate-900 border-none">
                                 {isLoading ? 'Verifying...' : 'Authorize Drive Bridge'}
                             </Button>
-
-                            <p className="text-[8px] text-slate-400 text-center uppercase font-black tracking-widest px-2 leading-tight">
-                                Current URL must be listed in "Authorized JavaScript Origins" in GCP Console.
-                            </p>
                         </div>
                     )}
                 </div>

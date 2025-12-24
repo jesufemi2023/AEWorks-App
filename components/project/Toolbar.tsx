@@ -1,8 +1,8 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import Button from '../ui/Button';
 import Icon from '../ui/Icon';
-import Modal from '../ui/Modal';
-import { View, Project, AuthUser } from '../../types';
+import { View, Project } from '../../types';
 import ProjectListModal from './ProjectListModal';
 import { useProjectContext } from '../../hooks/useProjectContext';
 import { useAppContext } from '../../hooks/useAppContext';
@@ -23,6 +23,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
     const [isProjectListOpen, setIsProjectListOpen] = useState(false);
     const [isDbMenuOpen, setIsDbMenuOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [lastSyncTime, setLastSyncTime] = useState<string | null>(db.getSystemMeta().lastCloudSync || null);
     
     const dbMenuRef = useRef<HTMLDivElement>(null);
 
@@ -50,6 +51,10 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         setIsSyncing(false);
         if (result.success) {
             showNotification(result.message, "success");
+            const newMeta = db.getSystemMeta();
+            setLastSyncTime(newMeta.lastCloudSync || null);
+            
+            // Refresh local state to reflect synced data
             setProjects(db.getData('projects'));
             setClients(db.getData('clients'));
             setContacts(db.getData('contacts'));
@@ -102,17 +107,25 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <button 
-                        onClick={handleManualSync} 
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${
-                            isSyncing ? 'bg-blue-50 border-blue-200 text-blue-600' : 
-                            isCloudActive ? 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 shadow-sm' : 
-                            'bg-slate-50 border-transparent text-slate-400'
-                        }`}
-                    >
-                        <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : isCloudActive ? 'bg-green-500 shadow-[0_0_5px_#10b981]' : 'bg-slate-300'}`}></div>
-                        <span className="hidden sm:inline">{isSyncing ? 'Syncing' : isCloudActive ? 'Drive Connected' : 'No Drive Link'}</span>
-                    </button>
+                    <div className="flex flex-col items-end">
+                        <button 
+                            onClick={handleManualSync} 
+                            disabled={isSyncing}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${
+                                isSyncing ? 'bg-blue-50 border-blue-200 text-blue-600 cursor-wait' : 
+                                isCloudActive ? 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 shadow-sm' : 
+                                'bg-slate-50 border-transparent text-slate-400 cursor-not-allowed'
+                            }`}
+                        >
+                            <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : isCloudActive ? 'bg-green-500 shadow-[0_0_5px_#10b981]' : 'bg-slate-300'}`}></div>
+                            <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : isCloudActive ? 'Pull Cloud' : 'No Drive Link'}</span>
+                        </button>
+                        {lastSyncTime && isCloudActive && (
+                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">
+                                Last Sync: {new Date(lastSyncTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                        )}
+                    </div>
 
                     {!isViewer && (
                         <div className="relative" ref={dbMenuRef}>
