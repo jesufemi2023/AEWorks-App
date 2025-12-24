@@ -28,6 +28,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
         if (localUsers.length <= 1 && !meta.driveAccessToken) {
             setActiveTab('setup');
         }
+        // Refresh local config state from DB
+        setConfig(db.getSystemMeta());
     }, []);
 
     const handleLogin = () => {
@@ -73,6 +75,17 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
     const copyOrigin = () => {
         navigator.clipboard.writeText(currentOrigin);
         showNotification("Origin URL copied to clipboard!");
+    };
+
+    const copySetupLink = () => {
+        if (!config.googleClientId) {
+            showNotification("Configure a Client ID first.", "warning");
+            return;
+        }
+        // Creates a URL that auto-configures the app on a new device
+        const setupUrl = `${window.location.origin}${window.location.pathname}?cid=${encodeURIComponent(config.googleClientId)}`;
+        navigator.clipboard.writeText(setupUrl);
+        showNotification("Multi-device setup link copied!", "success");
     };
 
     const handleGoogleDriveSync = () => {
@@ -181,9 +194,6 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                                 <code className="block text-[10px] font-mono font-bold text-blue-700 break-all bg-white p-2 rounded-lg border border-blue-200">
                                     {currentOrigin}
                                 </code>
-                                <p className="text-[8px] text-blue-600 mt-2 font-bold uppercase leading-tight italic">
-                                    * Add this to "Authorized JavaScript Origins" in GCP Console.
-                                </p>
                             </div>
                             
                             {showInstructions && (
@@ -194,17 +204,17 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                                     <p className="text-[9px] font-bold leading-relaxed mb-3 opacity-90">
                                         Google blocks new connections until your email is added as a "Test User".
                                     </p>
-                                    <div className="bg-white/10 p-2 rounded-lg space-y-2 text-[8px] font-black uppercase tracking-tight">
-                                        <p>1. Go to "OAuth Consent Screen" in GCP</p>
-                                        <p>2. Scroll to "Test Users"</p>
-                                        <p>3. Add your Gmail address and Save</p>
-                                    </div>
                                     <button onClick={() => setShowInstructions(false)} className="mt-3 w-full py-2 bg-white text-red-600 rounded-lg text-[9px] font-black uppercase">I've Added My Email</button>
                                 </div>
                             )}
                             
                             <div>
-                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Google Client ID</label>
+                                <div className="flex justify-between items-center mb-1 ml-1">
+                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Google Client ID</label>
+                                    <button onClick={copySetupLink} className="text-[8px] font-black text-blue-600 uppercase hover:underline">
+                                        <Icon name="fas fa-link" className="mr-1" /> Copy Setup Link
+                                    </button>
+                                </div>
                                 <textarea value={config.googleClientId} onChange={(e) => handleClientIdChange(e.target.value)} rows={2} className="w-full p-3 border border-slate-200 rounded-xl text-[9px] font-mono font-bold bg-slate-50 outline-none focus:border-blue-500" placeholder="Enter Client ID from GCP" />
                             </div>
                             

@@ -67,14 +67,36 @@ const DEFAULT_CLIENT_ID = '674092109435-96p21r75k1jgr7t1f0l4eohf5c49k23t.apps.go
 
 export const getSystemMeta = (): SystemMeta => {
     const raw = localStorage.getItem('system_meta');
+    
+    // Check URL for auto-config (cid = Client ID)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlClientId = urlParams.get('cid');
+
     const defaultMeta: SystemMeta = { 
         id: 'meta', 
         versionLabel: 'v4.5 Google Cloud', 
         syncApiKey: '',
         autoSync: true,
         backupLocation: 'Google_Drive_AEWorks',
-        googleClientId: DEFAULT_CLIENT_ID
+        googleClientId: urlClientId || DEFAULT_CLIENT_ID
     };
+    
+    // If URL has a client ID, update local storage immediately to persist for this device
+    if (urlClientId) {
+        let existing: any = {};
+        if (raw) {
+            try {
+                const parsed = JSON.parse(raw);
+                existing = Array.isArray(parsed) ? parsed[0] : parsed;
+            } catch (e) {}
+        }
+        localStorage.setItem('system_meta', JSON.stringify([{ ...defaultMeta, ...existing, googleClientId: urlClientId }]));
+        
+        // Clean URL after ingestion to keep it tidy
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+        return { ...defaultMeta, ...existing, googleClientId: urlClientId };
+    }
     
     if (!raw) return defaultMeta;
     
@@ -124,7 +146,6 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         let fileId = searchData.files?.[0]?.id;
 
         if (!fileId) {
-            // First time connecting - we should push local data immediately
             updateSystemMeta({ driveAccessToken: token });
             const pushResult = await pushToCloud();
             if (pushResult.success) {
