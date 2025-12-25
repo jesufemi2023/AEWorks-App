@@ -19,7 +19,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         updateProject
     } = useProjectContext();
     
-    const { currentUser, showNotification } = useAppContext();
+    const { currentUser, setCurrentUser, showNotification } = useAppContext();
     const [isProjectListOpen, setIsProjectListOpen] = useState(false);
     const [isDbMenuOpen, setIsDbMenuOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -143,6 +143,12 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         }
     };
 
+    const handleLogout = () => {
+        if (confirm("Terminate operational session?")) {
+            setCurrentUser(null);
+        }
+    };
+
     const isCloudActive = !!systemMeta.driveAccessToken;
     const driveFileUrl = systemMeta.driveFileUrl || (systemMeta.driveFileId ? `https://drive.google.com/file/d/${systemMeta.driveFileId}/view` : null);
 
@@ -175,26 +181,21 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                     <Button onClick={() => setView(View.TRACKER)} variant="primary" icon="fas fa-columns" size="sm" className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black">Tracker</Button>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                     <div className="flex flex-col items-end">
                         <div className="flex items-center gap-1">
                             <button onClick={handleManualSync} disabled={isSyncing || isCommitting} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${badgeClass}`}>
                                 <div className={`w-1.5 h-1.5 rounded-full ${dotClass}`}></div>
                                 <span className="hidden sm:inline">
-                                    {isSyncing ? 'Syncing...' : syncError ? 'Re-link' : isCloudActive ? (systemMeta.connectedEmail ? `Linked: ${systemMeta.connectedEmail}` : 'Sync Cloud') : 'Connect Cloud'}
+                                    {isSyncing ? 'Syncing...' : syncError ? 'Re-link' : isCloudActive ? (systemMeta.connectedEmail ? `Linked: ${systemMeta.connectedEmail}` : 'Sync Data') : 'Establish Link'}
                                 </span>
                             </button>
                             {driveFileUrl && (
-                                <a href={driveFileUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" title="Locate Master Vault on Google Drive">
+                                <a href={driveFileUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" title="Locate Repository on Google Drive">
                                     <Icon name="fas fa-external-link-alt" className="text-[10px]" />
                                 </a>
                             )}
                         </div>
-                        {systemMeta.lastCloudSync && isCloudActive && !syncError && (
-                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">
-                                Latest Sync: {new Date(systemMeta.lastCloudSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                        )}
                     </div>
 
                     {!isViewer && (
@@ -218,6 +219,10 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                             )}
                         </div>
                     )}
+                    
+                    <button onClick={handleLogout} className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900 text-slate-400 hover:bg-red-600 hover:text-white transition-all shadow-sm" title="Terminate Session">
+                        <Icon name="fas fa-power-off" className="text-[10px]" />
+                    </button>
                 </div>
             </div>
             <ProjectListModal isOpen={isProjectListOpen} onClose={() => setIsProjectListOpen(false)} onLoadProject={handleLoadProject} projects={projects} />
