@@ -144,9 +144,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
     };
 
     const handleLogout = () => {
-        if (confirm("Terminate operational session?")) {
-            setCurrentUser(null);
-        }
+        setCurrentUser(null);
     };
 
     const isCloudActive = !!systemMeta.driveAccessToken;

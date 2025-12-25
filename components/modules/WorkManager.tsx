@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import Button from '../ui/Button';
 import Icon from '../ui/Icon';
@@ -41,7 +42,7 @@ interface DerivedTask {
 }
 
 const WorkManager: React.FC<WorkManagerProps> = ({ onBack }) => {
-    const { showNotification } = useAppContext();
+    const { setCurrentUser, showNotification } = useAppContext();
     const [projects, setProjects] = useState<Project[]>([]);
     const [allStaff, setAllStaff] = useState<Contact[]>([]);
     const [framingMaterials, setFramingMaterials] = useState<FramingMaterial[]>([]);
@@ -161,6 +162,10 @@ const WorkManager: React.FC<WorkManagerProps> = ({ onBack }) => {
         showNotification("Project production parameter synchronized.");
     };
 
+    const handleLogout = () => {
+        setCurrentUser(null);
+    };
+
     return (
         <div className="flex flex-col h-screen bg-slate-100 font-sans">
             <header className="bg-slate-900 text-white p-4 flex justify-between items-center shadow-lg shrink-0">
@@ -170,10 +175,19 @@ const WorkManager: React.FC<WorkManagerProps> = ({ onBack }) => {
                     </Button>
                     <h2 className="text-xl font-black uppercase tracking-tighter">Operational Analytics</h2>
                 </div>
-                <div className="flex gap-1 bg-slate-800 p-1 rounded-xl">
-                    <button onClick={() => setActiveTab('simulation')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'simulation' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-white'}`}>Simulation</button>
-                    <button onClick={() => setActiveTab('floor_log')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'floor_log' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-white'}`}>Floor Log</button>
-                    <button onClick={() => setActiveTab('parameters')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'parameters' ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-white'}`}>Parameters</button>
+                <div className="flex items-center gap-3">
+                    <div className="flex gap-1 bg-slate-800 p-1 rounded-xl">
+                        <button onClick={() => setActiveTab('simulation')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'simulation' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-white'}`}>Simulation</button>
+                        <button onClick={() => setActiveTab('floor_log')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'floor_log' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-white'}`}>Floor Log</button>
+                        <button onClick={() => setActiveTab('parameters')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'parameters' ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-white'}`}>Parameters</button>
+                    </div>
+                    <button 
+                        onClick={handleLogout} 
+                        className="bg-red-600/20 text-red-500 p-2 px-3 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center gap-2 text-[10px] font-black uppercase"
+                    >
+                        <Icon name="fas fa-power-off" />
+                        <span className="hidden sm:inline">Logout</span>
+                    </button>
                 </div>
             </header>
 
@@ -328,7 +342,6 @@ const WorkManager: React.FC<WorkManagerProps> = ({ onBack }) => {
                                                         <input 
                                                             type="number" 
                                                             step="0.01"
-                                                            // FIX: Explicitly cast to number to avoid type union errors from WorkTeamSpec keys
                                                             value={(selectedProject.costingVariables[param.key] || (teamSpec as any)[param.key] || 0) as number} 
                                                             onChange={e => handleUpdateParam(param.key, parseFloat(e.target.value))}
                                                             className="w-32 p-2.5 bg-white border border-slate-200 rounded-xl font-black text-right text-xs focus:ring-2 focus:ring-amber-500 shadow-sm"

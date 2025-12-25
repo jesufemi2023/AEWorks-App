@@ -315,15 +315,22 @@ const MainLayout: React.FC<MainLayoutProps> = ({ onBack }) => {
                     <Header />
                 </div>
 
-                <div className="md:hidden flex-shrink-0 bg-slate-900 text-white p-1.5 rounded-lg mb-1.5 flex justify-between items-center shadow-md">
+                <div className="md:hidden flex-shrink-0 bg-slate-900 text-white p-2 rounded-lg mb-1.5 flex justify-between items-center shadow-md">
                     <div className="flex items-center gap-2">
                         {onBack && (
-                            <button onClick={onBack} className="bg-slate-700 p-1.5 rounded-full"><Icon name="fas fa-arrow-left" className="text-xs"/></button>
+                            <button onClick={onBack} className="bg-slate-700 p-2 rounded-full"><Icon name="fas fa-arrow-left" className="text-xs"/></button>
                         )}
                         <div className="flex flex-col">
                             <span className="font-black text-xs leading-tight">AEWorks</span>
                         </div>
                     </div>
+                    <button 
+                        onClick={() => setCurrentUser(null)} 
+                        className="bg-red-600/20 text-red-500 p-2 rounded-full hover:bg-red-600 hover:text-white transition-all"
+                        title="Logout"
+                    >
+                        <Icon name="fas fa-power-off" className="text-xs" />
+                    </button>
                 </div>
 
                 {view !== View.TRACKER && (

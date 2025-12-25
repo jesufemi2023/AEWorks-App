@@ -20,7 +20,6 @@ const DEFAULT_RATES = {
     workmen: 1
 };
 
-// Default Daily Rates for Staff
 const DAILY_RATE_DEFAULTS = {
     'Staff - Permanent': 12500,
     'Staff - Contract': 10000,
@@ -28,16 +27,14 @@ const DAILY_RATE_DEFAULTS = {
 };
 
 const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) => {
-    const { currentUser, showNotification } = useAppContext();
+    const { currentUser, setCurrentUser, showNotification } = useAppContext();
     const [activeTab, setActiveTab] = useState<'run' | 'history' | 'approvals'>('run');
     
-    // Core Data
     const [staff, setStaff] = useState<Contact[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [payrollHistory, setPayrollHistory] = useState<PayrollRun[]>([]);
     const [isLoaded, setIsLoaded] = useState(false);
     
-    // Active Run State
     const [currentRun, setCurrentRun] = useState<PayrollRun>({
         id: db.generateId(),
         paymentDate: new Date().toISOString().split('T')[0],
@@ -154,7 +151,6 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
         });
 
         if (newItems.length === 0) {
-            // Fix: Changed 'info' to 'success' as 'info' is not a valid Notification type
             showNotification("Payroll registry is already fully synchronized.", "success");
             return;
         }
@@ -176,7 +172,7 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                     if (updated.type === 'Contract %') {
                         updated.amount = (updated.rate || 0) * ((updated.units || 0) / 100);
                     } else if (updated.type === 'Lump Sum') {
-                        updated.amount = updated.rate; // Rate is the total amount here
+                        updated.amount = updated.rate;
                     } else {
                         updated.amount = (updated.rate || 0) * (updated.units || 0);
                     }
@@ -256,6 +252,10 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
         }
     };
 
+    const handleLogout = () => {
+        setCurrentUser(null);
+    };
+
     const formatN = (v: number) => `₦${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
     const PrintPayslip = ({ run }: { run: PayrollRun }) => (
@@ -270,7 +270,6 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                 
                 {run.items.map(item => (
                     <div key={item.id} className="grid grid-cols-2 gap-4 border-2 border-slate-900 p-6 rounded-xl page-break-after-always">
-                        {/* Company Copy */}
                         <div className="border-r border-slate-200 pr-4 flex flex-col justify-between">
                             <div>
                                 <div className="flex justify-between items-start mb-6">
@@ -330,7 +329,6 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                             </div>
                         </div>
 
-                        {/* Personnel Copy */}
                         <div className="pl-4 flex flex-col justify-between">
                             <div>
                                 <div className="flex justify-between items-start mb-6">
@@ -398,11 +396,17 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                             <Icon name="fas fa-gavel" className="mr-2"/> Master Approvals
                         </button>
                     )}
+                    <button 
+                        onClick={handleLogout} 
+                        className="bg-red-600/20 text-red-500 p-2 px-3 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center gap-2 text-[10px] font-black uppercase"
+                    >
+                        <Icon name="fas fa-power-off" />
+                        <span className="hidden sm:inline">Logout</span>
+                    </button>
                 </div>
             </header>
 
             <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
-                {/* Sidebar - Control Panel */}
                 <div className="w-full md:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0">
                     <div className="p-4 border-b border-slate-100">
                         <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
@@ -503,7 +507,6 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                     )}
                 </div>
 
-                {/* Main Viewport */}
                 <main className="flex-grow overflow-auto p-4 md:p-8 bg-slate-50">
                     <div className="max-w-6xl mx-auto space-y-6">
                         {activeTab === 'approvals' ? (
