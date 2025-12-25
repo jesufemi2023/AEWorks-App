@@ -170,8 +170,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                                 </p>
                             </div>
                             
-                            <Button onClick={handleGoogleDriveSync} variant="success" size="lg" disabled={isLoading} icon={isLoading ? "fas fa-sync animate-spin" : "fab fa-google"} className="w-full py-4 text-[10px] tracking-[0.15em] uppercase font-black rounded-2xl shadow-xl shadow-green-600/20 bg-blue-600 border-none hover:bg-blue-700">
-                                {isLoading ? 'Verifying Identity...' : 'Authorize Corporate Repository'}
+                            <Button onClick={handleGoogleDriveSync} variant="success" size="lg" disabled={isLoading} icon={isLoading ? "fas fa-sync animate-spin" : "fab fa-google"} className="w-full py-4 text-[9px] tracking-[0.12em] uppercase font-black rounded-2xl shadow-xl shadow-green-600/20 bg-blue-600 border-none hover:bg-blue-700">
+                                {isLoading ? 'Verifying Identity...' : 'AUTHORIZE AEWORKS REPOSITORY'}
                             </Button>
 
                             <div className="pt-4 mt-2 border-t border-slate-100">
