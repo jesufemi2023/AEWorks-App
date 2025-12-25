@@ -198,8 +198,9 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
 
                     {!isViewer && (
                         <div className="relative" ref={dbMenuRef}>
-                            <button onClick={() => setIsDbMenuOpen(!isDbMenuOpen)} className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-all ${isDbMenuOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}>
+                            <button onClick={() => setIsDbMenuOpen(!isDbMenuOpen)} className={`flex items-center gap-2 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-all ${isDbMenuOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'}`}>
                                 <Icon name="fas fa-database" />
+                                <span className="hidden sm:inline">Vault</span>
                             </button>
                             {isDbMenuOpen && (
                                 <div className="absolute top-[calc(100%+4px)] right-0 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[100] animate-fade-in origin-top-right">
@@ -218,8 +219,13 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                         </div>
                     )}
                     
-                    <button onClick={handleLogout} className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-900 text-slate-400 hover:bg-red-600 hover:text-white transition-all shadow-sm" title="Terminate Session">
+                    <button 
+                        onClick={handleLogout} 
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 text-slate-400 hover:bg-red-600 hover:text-white transition-all shadow-sm group" 
+                        title="Terminate Session"
+                    >
                         <Icon name="fas fa-power-off" className="text-[10px]" />
+                        <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Logout</span>
                     </button>
                 </div>
             </div>

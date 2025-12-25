@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { useAppContext } from '../../hooks/useAppContext';
 import Icon from '../ui/Icon';
@@ -117,13 +118,27 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
             <header className="bg-slate-900 text-white px-8 py-5 flex items-center justify-between shadow-2xl sticky top-0 z-50">
                 <div className="flex items-center gap-4">
                     <div className="bg-white p-1 rounded-xl w-10 h-10 flex items-center justify-center shadow-inner overflow-hidden">
-                        {logo ? <img src={logo} className="max-h-full max-w-full object-contain" /> : <Icon name="fas fa-industry" className="text-slate-900" />}
+                        {logo ? <img src={logo} className="max-h-full max-w-full object-contain" alt="AEWorks" /> : <Icon name="fas fa-industry" className="text-slate-900" />}
                     </div>
                     <h1 className="text-xl font-black uppercase tracking-tighter">AEWorks Enterprise</h1>
                 </div>
-                <div className="flex gap-4">
-                    <button onClick={() => setIsHelpOpen(true)} className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-all"><Icon name="fas fa-book" /></button>
-                    <button onClick={onLogout} className="w-10 h-10 rounded-xl bg-red-900/20 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"><Icon name="fas fa-power-off" /></button>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => setIsHelpOpen(true)} 
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 text-[10px] font-black uppercase tracking-[0.1em] hover:bg-slate-700 transition-all border border-slate-700"
+                    >
+                        <Icon name="fas fa-book" className="text-blue-400" /> 
+                        <span className="hidden sm:inline">Operations Manual</span>
+                        <span className="sm:hidden">Help</span>
+                    </button>
+                    <button 
+                        onClick={onLogout} 
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-900/20 text-red-500 text-[10px] font-black uppercase tracking-[0.1em] hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
+                    >
+                        <Icon name="fas fa-power-off" /> 
+                        <span className="hidden sm:inline">Exit Session</span>
+                        <span className="sm:hidden">Logout</span>
+                    </button>
                 </div>
             </header>
 
