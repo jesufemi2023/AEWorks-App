@@ -16,19 +16,18 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
     const [activeTab, setActiveTab] = useState<'login' | 'setup'>('login');
     const [isLoading, setIsLoading] = useState(false);
     const [showInstructions, setShowInstructions] = useState(false);
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [logo, setLogo] = useState<string | null>(db.getSystemLogo());
     const [config, setConfig] = useState(db.getSystemMeta());
     const { showNotification } = useAppContext();
 
-    const currentOrigin = window.location.origin;
-
     useEffect(() => {
         const localUsers = db.getData('users');
         const meta = db.getSystemMeta();
+        // Automatically route to setup if no cloud link and no local users
         if (localUsers.length <= 1 && !meta.driveAccessToken) {
             setActiveTab('setup');
         }
-        // Refresh local config state from DB
         setConfig(db.getSystemMeta());
     }, []);
 
@@ -53,67 +52,40 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
             onLogin({ username: foundUser.username, email: foundUser.email, role: foundUser.role });
             showNotification(`Access Authorized.`, 'success');
         } else {
-            showNotification('Identity Check Failed. Sync with Drive if using a new device.', 'error');
+            showNotification('Identity Check Failed. Sync with Cloud Bridge if you are a new user.', 'error');
         }
-    };
-
-    const handleClientIdChange = (val: string) => {
-        const cleanVal = val.trim();
-        setConfig(prev => ({ ...prev, googleClientId: cleanVal }));
-        db.updateSystemMeta({ googleClientId: cleanVal });
     };
 
     const handleResetConfig = () => {
-        if (confirm("Reset to factory Client ID? This will clear your custom Google connection settings.")) {
+        if (confirm("Reset Corporate Identity Bridge? This will refresh settings from global policy.")) {
             localStorage.removeItem('system_meta');
             const freshMeta = db.getSystemMeta();
             setConfig(freshMeta);
-            showNotification("Configuration Reset.");
+            showNotification("Bridge Reset to Corporate Policy.");
         }
-    };
-
-    const copyOrigin = () => {
-        navigator.clipboard.writeText(currentOrigin);
-        showNotification("Origin URL copied to clipboard!");
-    };
-
-    const copySetupLink = () => {
-        if (!config.googleClientId) {
-            showNotification("Configure a Client ID first.", "warning");
-            return;
-        }
-        // Creates a URL that auto-configures the app on a new device
-        const setupUrl = `${window.location.origin}${window.location.pathname}?cid=${encodeURIComponent(config.googleClientId)}`;
-        navigator.clipboard.writeText(setupUrl);
-        showNotification("Multi-device setup link copied!", "success");
     };
 
     const handleGoogleDriveSync = () => {
         if (!config.googleClientId) {
-            showNotification("Please enter a Google Client ID.", "warning");
+            showNotification("Critical Error: No Identity Key found.", "error");
             return;
         }
 
         setIsLoading(true);
         try {
             if (!(window as any).google?.accounts?.oauth2) {
-                showNotification("Loading Google Auth...", "warning");
+                showNotification("Loading Google Auth Service...", "warning");
                 setIsLoading(false);
                 return;
             }
 
             const client = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: config.googleClientId,
-                scope: 'https://www.googleapis.com/auth/drive.file',
+                scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
                 callback: async (response: any) => {
                     if (response.error) {
-                        console.error("OAuth Error:", response);
                         setIsLoading(false);
-                        if (response.error === 'popup_closed_by_user') {
-                            showNotification("Login window closed.", "warning");
-                        } else {
-                            showNotification(`Google Error: ${response.error}`, "error");
-                        }
+                        showNotification(`Google Error: ${response.error}`, "error");
                         return;
                     }
                     
@@ -129,10 +101,9 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                     }
                 },
                 error_callback: (err: any) => {
-                    console.error("GIS Error:", err);
                     setIsLoading(false);
                     setShowInstructions(true);
-                    showNotification("Blocked: Please check the 'Test Users' guide below.", "error");
+                    showNotification("Connection Blocked: Unauthorized Email.", "error");
                 }
             });
             client.requestAccessToken();
@@ -166,8 +137,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                     {activeTab === 'login' ? (
                         <div className="space-y-4 animate-fade-in">
                             <div className="mb-6">
-                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Portal Login</h3>
-                                <p className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">Personnel Access Only</p>
+                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Portal Access</h3>
+                                <p className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">Authorized Staff Only</p>
                             </div>
                             <div className="relative">
                                 <Icon name="fas fa-user" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs" />
@@ -183,53 +154,50 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
                         <div className="space-y-5 animate-fade-in text-left">
                             <div className="mb-4 text-center">
                                 <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-none">Cloud Bridge</h3>
-                                <p className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">Configure Remote Sync</p>
+                                <p className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">Enterprise Configuration</p>
                             </div>
 
-                            <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl mb-2">
-                                <h4 className="text-[9px] font-black text-blue-900 uppercase tracking-tight mb-2 flex items-center justify-between">
-                                    <span>Authorized Origin</span>
-                                    <button onClick={copyOrigin} className="text-blue-600 hover:text-blue-800"><Icon name="fas fa-copy" /></button>
-                                </h4>
-                                <code className="block text-[10px] font-mono font-bold text-blue-700 break-all bg-white p-2 rounded-lg border border-blue-200">
-                                    {currentOrigin}
-                                </code>
+                            <div className="p-5 bg-slate-900 text-white rounded-3xl shadow-lg mb-2 border border-blue-500/30">
+                                <div className="flex items-center gap-4 mb-3">
+                                    <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-xl shadow-lg shadow-blue-600/20"><Icon name="fas fa-network-wired" /></div>
+                                    <div>
+                                        <h4 className="text-[11px] font-black uppercase tracking-tight">Corporate Sync</h4>
+                                        <p className="text-[8px] text-blue-400 uppercase tracking-widest font-bold">Global Identity Policy Active</p>
+                                    </div>
+                                </div>
+                                <p className="text-[9px] font-medium leading-relaxed opacity-80">
+                                    Click the button below to authorize the shared central Google Drive. This device will use the <strong>Master Enterprise Key</strong> automatically.
+                                </p>
                             </div>
                             
-                            {showInstructions && (
-                                <div className="p-4 bg-red-600 text-white rounded-2xl shadow-lg animate-fade-in">
-                                    <h4 className="text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
-                                        <Icon name="fas fa-exclamation-triangle" /> Critical Fix: Test Users
-                                    </h4>
-                                    <p className="text-[9px] font-bold leading-relaxed mb-3 opacity-90">
-                                        Google blocks new connections until your email is added as a "Test User".
-                                    </p>
-                                    <button onClick={() => setShowInstructions(false)} className="mt-3 w-full py-2 bg-white text-red-600 rounded-lg text-[9px] font-black uppercase">I've Added My Email</button>
-                                </div>
-                            )}
-                            
-                            <div>
-                                <div className="flex justify-between items-center mb-1 ml-1">
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Google Client ID</label>
-                                    <button onClick={copySetupLink} className="text-[8px] font-black text-blue-600 uppercase hover:underline">
-                                        <Icon name="fas fa-link" className="mr-1" /> Copy Setup Link
-                                    </button>
-                                </div>
-                                <textarea value={config.googleClientId} onChange={(e) => handleClientIdChange(e.target.value)} rows={2} className="w-full p-3 border border-slate-200 rounded-xl text-[9px] font-mono font-bold bg-slate-50 outline-none focus:border-blue-500" placeholder="Enter Client ID from GCP" />
-                            </div>
-                            
-                            <Button onClick={handleGoogleDriveSync} variant="success" size="lg" disabled={isLoading} icon={isLoading ? "fas fa-sync animate-spin" : "fab fa-google"} className="w-full py-4 text-[10px] tracking-[0.2em] uppercase font-black rounded-2xl shadow-xl shadow-green-600/20 bg-slate-900 border-none">
-                                {isLoading ? 'Verifying...' : 'Authorize Drive Bridge'}
+                            <Button onClick={handleGoogleDriveSync} variant="success" size="lg" disabled={isLoading} icon={isLoading ? "fas fa-sync animate-spin" : "fab fa-google"} className="w-full py-4 text-[10px] tracking-[0.15em] uppercase font-black rounded-2xl shadow-xl shadow-green-600/20 bg-blue-600 border-none hover:bg-blue-700">
+                                {isLoading ? 'Verifying Identity...' : 'Link Central Google Drive'}
                             </Button>
-                            
-                            <button onClick={handleResetConfig} className="w-full text-center text-[8px] font-black text-slate-300 uppercase hover:text-red-400 transition-colors py-2 tracking-widest">Reset Identity Config</button>
+
+                            <div className="pt-4 mt-2 border-t border-slate-100">
+                                <button onClick={() => setShowAdvanced(!showAdvanced)} className="w-full text-center text-[8px] font-black text-slate-300 uppercase hover:text-slate-500 transition-colors tracking-[0.2em] mb-3">
+                                    {showAdvanced ? 'Hide Technical Metadata' : 'View Identity Metadata'}
+                                </button>
+                                
+                                {showAdvanced && (
+                                    <div className="space-y-3 animate-fade-in">
+                                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 block ml-1">Current identity key</label>
+                                            <code className="block text-[8px] font-mono font-bold text-slate-500 break-all leading-relaxed">
+                                                {config.googleClientId}
+                                            </code>
+                                        </div>
+                                        <button onClick={handleResetConfig} className="w-full text-center text-[8px] font-black text-red-300 hover:text-red-500 transition-colors uppercase py-1">Refresh Global Policy</button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
             </div>
             
             <div className="fixed bottom-6 text-center w-full pointer-events-none">
-                <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.5em] opacity-30">AEWorks v4.5 Enterprise Bridge</p>
+                <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.5em] opacity-30 text-center">AEWorks Enterprise v4.5 | Secure Repository</p>
             </div>
         </div>
     );

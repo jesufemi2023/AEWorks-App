@@ -63,7 +63,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         try {
             const client = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: config.googleClientId,
-                scope: 'https://www.googleapis.com/auth/drive.file',
+                scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
                 callback: async (response: any) => {
                     if (response.error) {
                         setIsSyncing(false);
@@ -123,14 +123,14 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         if (meta.driveAccessToken) {
             const cloudResult = await db.pushToCloud();
             if (cloudResult.success) {
-                showNotification(`Synced to Drive.`, 'success');
+                showNotification(`Synced to Drive Account: ${meta.connectedEmail}`, 'success');
             } else {
                 showNotification(`Saved Locally. Drive Sync: ${cloudResult.message}`, 'warning');
                 setSyncError(true);
             }
             setSystemMeta(db.getSystemMeta());
         } else {
-            showNotification(`Saved Locally. Click 'Connect Cloud' to backup to Drive.`, 'warning');
+            showNotification(`Offline Save. Link Cloud Bridge for centralization.`, 'warning');
         }
         setIsCommitting(false);
     };
@@ -144,7 +144,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
     };
 
     const isCloudActive = !!systemMeta.driveAccessToken;
-    const driveFileUrl = systemMeta.driveFileId ? `https://drive.google.com/file/d/${systemMeta.driveFileId}/view` : null;
+    const driveFileUrl = systemMeta.driveFileUrl || (systemMeta.driveFileId ? `https://drive.google.com/file/d/${systemMeta.driveFileId}/view` : null);
 
     let badgeClass = 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-600 shadow-inner';
     let dotClass = 'bg-slate-300';
@@ -181,18 +181,18 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                             <button onClick={handleManualSync} disabled={isSyncing || isCommitting} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${badgeClass}`}>
                                 <div className={`w-1.5 h-1.5 rounded-full ${dotClass}`}></div>
                                 <span className="hidden sm:inline">
-                                    {isSyncing ? 'Syncing...' : syncError ? 'Re-link' : isCloudActive ? 'Sync Cloud' : 'Connect Cloud'}
+                                    {isSyncing ? 'Syncing...' : syncError ? 'Re-link' : isCloudActive ? (systemMeta.connectedEmail ? `Linked: ${systemMeta.connectedEmail}` : 'Sync Cloud') : 'Connect Cloud'}
                                 </span>
                             </button>
                             {driveFileUrl && (
-                                <a href={driveFileUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" title="Open in Google Drive">
+                                <a href={driveFileUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" title="Locate Master Vault on Google Drive">
                                     <Icon name="fas fa-external-link-alt" className="text-[10px]" />
                                 </a>
                             )}
                         </div>
                         {systemMeta.lastCloudSync && isCloudActive && !syncError && (
                             <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">
-                                Last Sync: {new Date(systemMeta.lastCloudSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                Latest Sync: {new Date(systemMeta.lastCloudSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                         )}
                     </div>

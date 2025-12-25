@@ -61,27 +61,32 @@ export interface SystemMeta {
     driveFileId?: string;
     driveAccessToken?: string;
     googleClientId?: string; 
+    connectedEmail?: string;
+    driveFileUrl?: string;
 }
 
-const DEFAULT_CLIENT_ID = '674092109435-96p21r75k1jgr7t1f0l4eohf5c49k23t.apps.googleusercontent.com';
+// CORPORATE MASTER CONFIGURATION
+// Prioritizes Vercel/Vite environment variables, falls back to the hardcoded ID
+const GLOBAL_ENV_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
+const HARDCODED_FALLBACK_ID = '674092109435-96p21r75k1jgr7t1f0l4eohf5c49k23t.apps.googleusercontent.com';
+const MASTER_CLIENT_ID = GLOBAL_ENV_CLIENT_ID || HARDCODED_FALLBACK_ID;
 
 export const getSystemMeta = (): SystemMeta => {
     const raw = localStorage.getItem('system_meta');
     
-    // Check URL for auto-config (cid = Client ID)
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlClientId = urlParams.get('cid');
-
     const defaultMeta: SystemMeta = { 
         id: 'meta', 
-        versionLabel: 'v4.5 Google Cloud', 
+        versionLabel: 'v4.5 Enterprise Cloud', 
         syncApiKey: '',
         autoSync: true,
         backupLocation: 'Google_Drive_AEWorks',
-        googleClientId: urlClientId || DEFAULT_CLIENT_ID
+        googleClientId: MASTER_CLIENT_ID
     };
     
-    // If URL has a client ID, update local storage immediately to persist for this device
+    // Check URL for manual override (rare usage)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlClientId = urlParams.get('cid');
+
     if (urlClientId) {
         let existing: any = {};
         if (raw) {
@@ -91,8 +96,6 @@ export const getSystemMeta = (): SystemMeta => {
             } catch (e) {}
         }
         localStorage.setItem('system_meta', JSON.stringify([{ ...defaultMeta, ...existing, googleClientId: urlClientId }]));
-        
-        // Clean URL after ingestion to keep it tidy
         const newUrl = window.location.pathname;
         window.history.replaceState({}, '', newUrl);
         return { ...defaultMeta, ...existing, googleClientId: urlClientId };
@@ -103,6 +106,15 @@ export const getSystemMeta = (): SystemMeta => {
     try {
         const data = JSON.parse(raw);
         const meta = Array.isArray(data) ? data[0] : data;
+        
+        // CRITICAL: Always enforce the environment variable ID if it changed in Vercel
+        // This ensures all devices update their "Client ID" automatically on next load.
+        if (meta.googleClientId !== MASTER_CLIENT_ID) {
+            const updated = { ...defaultMeta, ...meta, googleClientId: MASTER_CLIENT_ID };
+            localStorage.setItem('system_meta', JSON.stringify([updated]));
+            return updated;
+        }
+
         return { ...defaultMeta, ...meta };
     } catch {
         return defaultMeta;
@@ -129,14 +141,23 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
     if (!token) return { success: false, message: "Drive Authorization Required." };
 
     try {
+        let email = meta.connectedEmail;
+        try {
+            const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: getDriveHeaders(token) });
+            if (userRes.ok) {
+                const userData = await userRes.json();
+                email = userData.email;
+            }
+        } catch (e) {}
+
         const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
-        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id, name, modifiedTime)`, {
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id, name, modifiedTime, webViewLink)`, {
             headers: getDriveHeaders(token)
         });
         
         if (!searchRes.ok) {
             if (searchRes.status === 401) {
-                updateSystemMeta({ driveAccessToken: undefined });
+                updateSystemMeta({ driveAccessToken: undefined, connectedEmail: undefined });
                 return { success: false, message: "Auth Session Expired. Re-authorize." };
             }
             throw new Error(`Drive Error: ${searchRes.status}`);
@@ -144,14 +165,15 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         
         const searchData = await searchRes.json();
         let fileId = searchData.files?.[0]?.id;
+        let fileUrl = searchData.files?.[0]?.webViewLink;
 
         if (!fileId) {
-            updateSystemMeta({ driveAccessToken: token });
+            updateSystemMeta({ driveAccessToken: token, connectedEmail: email });
             const pushResult = await pushToCloud();
             if (pushResult.success) {
-                return { success: true, message: "Cloud Bridge Created. Vault Initialized on Drive." };
+                return { success: true, message: `Vault Initialized on Drive (${email})` };
             }
-            return { success: true, message: "Authorized. Click 'Commit' to create your Drive vault." };
+            return { success: true, message: `Connected as ${email}. Click 'Commit' to push data.` };
         }
 
         const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
@@ -174,10 +196,12 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         updateSystemMeta({ 
             driveFileId: fileId, 
             driveAccessToken: token,
+            driveFileUrl: fileUrl,
+            connectedEmail: email,
             lastCloudSync: new Date().toISOString() 
         });
 
-        return { success: true, message: "Vault Synchronized." };
+        return { success: true, message: `Synced with ${email}` };
     } catch (err) {
         console.error("Sync Failure:", err);
         return { success: false, message: "Sync Failed: Cloud Unreachable." };
@@ -198,19 +222,21 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         DB_KEYS.forEach(key => fullDB[key] = getData(key));
 
         let fileId = meta.driveFileId;
+        let fileUrl = meta.driveFileUrl;
 
         if (!fileId) {
             const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
-            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}`, {
+            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, webViewLink)`, {
                 headers: getDriveHeaders(token)
             });
             const searchData = await searchRes.json();
             fileId = searchData.files?.[0]?.id;
+            fileUrl = searchData.files?.[0]?.webViewLink;
         }
 
         if (!fileId) {
             const metadata = { name: MASTER_FILE_NAME, mimeType: 'application/json' };
-            const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+            const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,webViewLink', {
                 method: 'POST',
                 headers: getDriveHeaders(token),
                 body: JSON.stringify(metadata)
@@ -218,7 +244,8 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
             if (!createRes.ok) throw new Error("Could not create vault file.");
             const createData = await createRes.json();
             fileId = createData.id;
-            updateSystemMeta({ driveFileId: fileId });
+            fileUrl = createData.webViewLink;
+            updateSystemMeta({ driveFileId: fileId, driveFileUrl: fileUrl });
         }
 
         const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
@@ -235,7 +262,7 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
             throw new Error(`Upload Failed: ${uploadRes.status}`);
         }
 
-        updateSystemMeta({ lastCloudSync: new Date().toISOString() });
+        updateSystemMeta({ lastCloudSync: new Date().toISOString(), driveFileUrl: fileUrl });
         return { success: true, message: "Synced to Drive." };
     } catch (err: any) {
         return { success: false, message: err.message || "Write Error." };
