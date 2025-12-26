@@ -70,6 +70,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                         showNotification(`Google Error: ${response.error}`, "error");
                         return;
                     }
+                    showNotification("Establishing identity handshake...", "warning");
                     const result = await db.syncWithCloud(response.access_token);
                     setIsSyncing(false);
                     if (result.success) {
@@ -94,14 +95,15 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         }
         setIsSyncing(true);
         setSyncError(false);
+        showNotification("Pulling latest cloud data...", "warning");
         const result = await db.syncWithCloud();
         setIsSyncing(false);
         if (result.success) {
-            showNotification(result.message, "success");
+            showNotification(`SUCCESS: Vault synchronized with Google Drive.`, "success");
             refreshAppState();
         } else {
             setSyncError(true);
-            showNotification(result.message, "warning");
+            showNotification(`SYNC FAILED: ${result.message}`, "error");
         }
     };
 
@@ -117,20 +119,24 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         }
 
         setIsCommitting(true);
+        
+        // Save to local storage first
         updateProject({ ...currentProject, updatedAt: new Date().toISOString() });
         
         const meta = db.getSystemMeta();
         if (meta.driveAccessToken) {
+            showNotification("COMMITTING TO CLOUD REPOSITORY...", "warning");
             const cloudResult = await db.pushToCloud();
             if (cloudResult.success) {
-                showNotification(`Synced to Drive Account: ${meta.connectedEmail}`, 'success');
+                showNotification(`SUCCESS: Project saved to Drive (${meta.connectedEmail})`, 'success');
+                setSyncError(false);
             } else {
-                showNotification(`Saved Locally. Drive Sync: ${cloudResult.message}`, 'warning');
+                showNotification(`LOCAL SAVE ONLY: Cloud sync failed (${cloudResult.message})`, 'warning');
                 setSyncError(true);
             }
             setSystemMeta(db.getSystemMeta());
         } else {
-            showNotification(`Offline Save. Link Cloud Bridge for centralization.`, 'warning');
+            showNotification(`OFFLINE SAVE SUCCESSFUL: Link cloud for central sync.`, 'warning');
         }
         setIsCommitting(false);
     };
@@ -140,6 +146,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         if (projectToLoad) {
             setCurrentProject(projectToLoad);
             setIsProjectListOpen(false);
+            showNotification(`Loaded Project: ${projectToLoad.projectCode}`);
         }
     };
 

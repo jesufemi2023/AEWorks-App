@@ -158,7 +158,7 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         if (!searchRes.ok) {
             if (searchRes.status === 401) {
                 updateSystemMeta({ driveAccessToken: undefined, connectedEmail: undefined });
-                return { success: false, message: "Auth Session Expired. Re-authorize." };
+                return { success: false, message: "Auth Session Expired." };
             }
             throw new Error(`Drive Error: ${searchRes.status}`);
         }
@@ -173,14 +173,14 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
             if (pushResult.success) {
                 return { success: true, message: `Vault Initialized on Drive (${email})` };
             }
-            return { success: true, message: `Connected as ${email}. Click 'Commit' to push data.` };
+            return { success: true, message: `Connected as ${email}. Initial commit pending.` };
         }
 
         const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
             headers: getDriveHeaders(token)
         });
         
-        if (!fileRes.ok) throw new Error("Vault Download Failed.");
+        if (!fileRes.ok) throw new Error("Vault download failed.");
         
         const actualData = await fileRes.json();
 
@@ -201,10 +201,10 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
             lastCloudSync: new Date().toISOString() 
         });
 
-        return { success: true, message: `Synced with ${email}` };
+        return { success: true, message: `Cloud data merged for ${email}` };
     } catch (err) {
         console.error("Sync Failure:", err);
-        return { success: false, message: "Sync Failed: Cloud Unreachable." };
+        return { success: false, message: "Cloud unreachable or network error." };
     }
 };
 
@@ -241,7 +241,7 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
                 headers: getDriveHeaders(token),
                 body: JSON.stringify(metadata)
             });
-            if (!createRes.ok) throw new Error("Could not create vault file.");
+            if (!createRes.ok) throw new Error("File creation failed.");
             const createData = await createRes.json();
             fileId = createData.id;
             fileUrl = createData.webViewLink;
@@ -257,7 +257,7 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         if (!uploadRes.ok) {
             if (uploadRes.status === 401) {
                 updateSystemMeta({ driveAccessToken: undefined });
-                return { success: false, message: "Session Expired." };
+                return { success: false, message: "Token expired." };
             }
             throw new Error(`Upload Failed: ${uploadRes.status}`);
         }
