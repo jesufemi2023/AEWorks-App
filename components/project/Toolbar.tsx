@@ -24,6 +24,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
     const [isDbMenuOpen, setIsDbMenuOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [isCommitting, setIsCommitting] = useState(false);
+    const [commitStatus, setCommitStatus] = useState<'idle' | 'saving' | 'syncing'>('idle');
     const [syncError, setSyncError] = useState(false);
     const [systemMeta, setSystemMeta] = useState(db.getSystemMeta());
     
@@ -113,19 +114,24 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
             showNotification('Project Name Required.', 'error');
             return;
         }
-        if (!currentProject.projectCode) {
-            showNotification('Generating Code...', 'warning');
-            return;
-        }
-
+        
         setIsCommitting(true);
+        setCommitStatus('saving');
         
         // 1. Save to local storage
-        updateProject({ ...currentProject, updatedAt: new Date().toISOString() });
+        try {
+            updateProject({ ...currentProject, updatedAt: new Date().toISOString() });
+        } catch (e: any) {
+            showNotification(`Local save failed: ${e.message}`, 'error');
+            setIsCommitting(false);
+            setCommitStatus('idle');
+            return;
+        }
         
         const meta = db.getSystemMeta();
         if (meta.driveAccessToken) {
-            showNotification("COMMITTING TO CLOUD REPOSITORY...", "warning");
+            setCommitStatus('syncing');
+            showNotification("Synchronizing with cloud repository...", "warning");
             
             // 2. Synchronize with Google Drive
             const cloudResult = await db.pushToCloud();
@@ -134,15 +140,17 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                 showNotification(`SUCCESS: Project saved to Drive (${meta.connectedEmail})`, 'success');
                 setSyncError(false);
             } else {
-                // EXPLICIT FAILURE REPORTING: Notification type 'error' for cloud failure
-                showNotification(`CLOUD SYNC FAILED: ${cloudResult.message}. Local copy preserved.`, 'error');
+                // EXPLICIT FAILURE REPORTING: notification type 'error' for cloud failure
+                showNotification(`CLOUD REPOSITORY ERROR: ${cloudResult.message}. Local copy preserved.`, 'error');
                 setSyncError(true);
             }
             setSystemMeta(db.getSystemMeta());
         } else {
             showNotification(`LOCAL SAVE SUCCESSFUL: Link cloud for central repository synchronization.`, 'warning');
         }
+        
         setIsCommitting(false);
+        setCommitStatus('idle');
     };
     
     const handleLoadProject = (projectCode: string) => {
@@ -181,7 +189,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
                 <div className="flex flex-row flex-nowrap gap-1.5 items-center flex-grow overflow-x-auto no-scrollbar">
                     {!isViewer && (
                         <Button onClick={handleSaveProject} variant="primary" icon={isCommitting ? "fas fa-sync animate-spin" : "fas fa-save"} disabled={isCommitting} size="sm" className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black">
-                            {isCommitting ? 'Pushing...' : 'Commit'}
+                            {commitStatus === 'saving' ? 'Saving...' : commitStatus === 'syncing' ? 'Syncing...' : 'Commit'}
                         </Button>
                     )}
                     <Button onClick={() => setIsProjectListOpen(true)} variant="success" icon="fas fa-folder-open" size="sm" className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black">Load</Button>

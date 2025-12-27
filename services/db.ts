@@ -129,6 +129,15 @@ const getDriveHeaders = (token: string) => ({
     'Content-Type': 'application/json'
 });
 
+const extractErrorMessage = async (response: Response): Promise<string> => {
+    try {
+        const body = await response.json();
+        return body.error?.message || `HTTP Error: ${response.status}`;
+    } catch {
+        return `Unexpected Status: ${response.status}`;
+    }
+};
+
 export const syncWithCloud = async (providedToken?: string): Promise<{success: boolean, message: string}> => {
     const meta = getSystemMeta();
     const token = providedToken || meta.driveAccessToken;
@@ -151,12 +160,12 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         });
         
         if (!searchRes.ok) {
+            const msg = await extractErrorMessage(searchRes);
             if (searchRes.status === 401) {
                 updateSystemMeta({ driveAccessToken: undefined, connectedEmail: undefined });
-                return { success: false, message: "Auth Session Expired." };
+                return { success: false, message: `Auth Session Expired. (${msg})` };
             }
-            const errorBody = await searchRes.json().catch(() => ({}));
-            throw new Error(errorBody.error?.message || `Drive Error: ${searchRes.status}`);
+            throw new Error(msg);
         }
         
         const searchData = await searchRes.json();
@@ -176,7 +185,10 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
             headers: getDriveHeaders(token)
         });
         
-        if (!fileRes.ok) throw new Error("Vault download failed.");
+        if (!fileRes.ok) {
+            const msg = await extractErrorMessage(fileRes);
+            throw new Error(`Vault download failed: ${msg}`);
+        }
         
         const actualData = await fileRes.json();
 
@@ -227,12 +239,12 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
             });
             
             if (!searchRes.ok) {
+                const msg = await extractErrorMessage(searchRes);
                 if (searchRes.status === 401) {
                     updateSystemMeta({ driveAccessToken: undefined });
                     return { success: false, message: "Authorization expired. Please re-link." };
                 }
-                const errorBody = await searchRes.json().catch(() => ({}));
-                throw new Error(errorBody.error?.message || "Could not search for repository.");
+                throw new Error(msg);
             }
             
             const searchData = await searchRes.json();
@@ -248,8 +260,8 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
                 body: JSON.stringify(metadata)
             });
             if (!createRes.ok) {
-                const errorBody = await createRes.json().catch(() => ({}));
-                throw new Error(errorBody.error?.message || "Repository file creation failed.");
+                const msg = await extractErrorMessage(createRes);
+                throw new Error(msg);
             }
             const createData = await createRes.json();
             fileId = createData.id;
@@ -264,12 +276,12 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         });
 
         if (!uploadRes.ok) {
+            const msg = await extractErrorMessage(uploadRes);
             if (uploadRes.status === 401) {
                 updateSystemMeta({ driveAccessToken: undefined });
                 return { success: false, message: "Session expired while uploading." };
             }
-            const errorBody = await uploadRes.json().catch(() => ({}));
-            throw new Error(errorBody.error?.message || `Upload failed with status ${uploadRes.status}`);
+            throw new Error(msg);
         }
 
         updateSystemMeta({ lastCloudSync: new Date().toISOString(), driveFileUrl: fileUrl });
