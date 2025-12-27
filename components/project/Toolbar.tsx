@@ -120,23 +120,27 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
 
         setIsCommitting(true);
         
-        // Save to local storage first
+        // 1. Save to local storage
         updateProject({ ...currentProject, updatedAt: new Date().toISOString() });
         
         const meta = db.getSystemMeta();
         if (meta.driveAccessToken) {
             showNotification("COMMITTING TO CLOUD REPOSITORY...", "warning");
+            
+            // 2. Synchronize with Google Drive
             const cloudResult = await db.pushToCloud();
+            
             if (cloudResult.success) {
                 showNotification(`SUCCESS: Project saved to Drive (${meta.connectedEmail})`, 'success');
                 setSyncError(false);
             } else {
-                showNotification(`LOCAL SAVE ONLY: Cloud sync failed (${cloudResult.message})`, 'warning');
+                // EXPLICIT FAILURE REPORTING: Notification type 'error' for cloud failure
+                showNotification(`CLOUD SYNC FAILED: ${cloudResult.message}. Local copy preserved.`, 'error');
                 setSyncError(true);
             }
             setSystemMeta(db.getSystemMeta());
         } else {
-            showNotification(`OFFLINE SAVE SUCCESSFUL: Link cloud for central sync.`, 'warning');
+            showNotification(`LOCAL SAVE SUCCESSFUL: Link cloud for central repository synchronization.`, 'warning');
         }
         setIsCommitting(false);
     };
