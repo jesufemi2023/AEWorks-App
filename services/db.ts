@@ -187,6 +187,11 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         
         if (!fileRes.ok) {
             const msg = await extractErrorMessage(fileRes);
+            if (fileRes.status === 404) {
+                // Stale File ID - Clear and retry
+                updateSystemMeta({ driveFileId: undefined, driveFileUrl: undefined });
+                return syncWithCloud(token);
+            }
             throw new Error(`Vault download failed: ${msg}`);
         }
         
@@ -209,7 +214,7 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
             lastCloudSync: new Date().toISOString() 
         });
 
-        return { success: true, message: `Cloud data merged for ${email}` };
+        return { true: true, message: `Cloud data merged for ${email}` } as any;
     } catch (err: any) {
         console.error("Sync Failure:", err);
         return { success: false, message: err.message || "Cloud unreachable or network error." };
@@ -217,7 +222,7 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
 };
 
 export const pushToCloud = async (): Promise<{success: boolean, message: string}> => {
-    const meta = getSystemMeta();
+    let meta = getSystemMeta();
     const token = meta.driveAccessToken;
     if (!token) return { success: false, message: "No active Drive link. Authorization required." };
     if (!navigator.onLine) return { success: false, message: "Device is offline. Cannot reach Drive." };
@@ -232,6 +237,7 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         let fileId = meta.driveFileId;
         let fileUrl = meta.driveFileUrl;
 
+        // If we don't have a file ID, or if we need to search for it
         if (!fileId) {
             const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
             const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, webViewLink)`, {
@@ -280,6 +286,12 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
             if (uploadRes.status === 401) {
                 updateSystemMeta({ driveAccessToken: undefined });
                 return { success: false, message: "Session expired while uploading." };
+            }
+            if (uploadRes.status === 404) {
+                // File was likely deleted manually from Drive.
+                // Clear the ID and retry the logic (it will search or create a new one)
+                updateSystemMeta({ driveFileId: undefined, driveFileUrl: undefined });
+                return pushToCloud();
             }
             throw new Error(msg);
         }
