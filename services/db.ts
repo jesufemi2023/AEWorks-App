@@ -63,6 +63,7 @@ export interface SystemMeta {
     googleClientId?: string; 
     connectedEmail?: string;
     driveFileUrl?: string;
+    activeCollaborators?: string[];
 }
 
 const GLOBAL_ENV_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
@@ -74,7 +75,7 @@ export const getSystemMeta = (): SystemMeta => {
     
     const defaultMeta: SystemMeta = { 
         id: 'meta', 
-        versionLabel: 'v4.5 Enterprise Cloud', 
+        versionLabel: 'v4.6 Multi-Dev Sync', 
         syncApiKey: '',
         autoSync: true,
         backupLocation: 'Google_Drive_AEWorks',
@@ -103,13 +104,6 @@ export const getSystemMeta = (): SystemMeta => {
     try {
         const data = JSON.parse(raw);
         const meta = Array.isArray(data) ? data[0] : data;
-        
-        if (meta.googleClientId !== MASTER_CLIENT_ID) {
-            const updated = { ...defaultMeta, ...meta, googleClientId: MASTER_CLIENT_ID };
-            localStorage.setItem('system_meta', JSON.stringify([updated]));
-            return updated;
-        }
-
         return { ...defaultMeta, ...meta };
     } catch {
         return defaultMeta;
@@ -138,7 +132,7 @@ const extractErrorMessage = async (response: Response): Promise<string> => {
     }
 };
 
-export const syncWithCloud = async (providedToken?: string): Promise<{success: boolean, message: string}> => {
+export const syncWithCloud = async (providedToken?: string, excludeId?: string): Promise<{success: boolean, message: string}> => {
     const meta = getSystemMeta();
     const token = providedToken || meta.driveAccessToken;
     
@@ -169,14 +163,15 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         }
         
         const searchData = await searchRes.json();
-        let fileId = searchData.files?.[0]?.id;
-        let fileUrl = searchData.files?.[0]?.webViewLink;
+        const foundFiles = searchData.files || [];
+        let fileId = foundFiles.find((f: any) => f.id !== excludeId)?.id || meta.driveFileId;
+        let fileUrl = foundFiles.find((f: any) => f.id !== excludeId)?.webViewLink || meta.driveFileUrl;
 
-        if (!fileId) {
-            updateSystemMeta({ driveAccessToken: token, connectedEmail: email });
-            const pushResult = await pushToCloud();
+        if (!fileId || fileId === excludeId) {
+            updateSystemMeta({ driveAccessToken: token, connectedEmail: email, driveFileId: undefined });
+            const pushResult = await pushToCloud(excludeId);
             if (pushResult.success) {
-                return { success: true, message: `Vault Initialized on Drive (${email})` };
+                return { success: true, message: `Shared Vault Initialized on Drive (${email})` };
             }
             return { success: true, message: `Connected as ${email}. Initial commit pending.` };
         }
@@ -188,9 +183,8 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
         if (!fileRes.ok) {
             const msg = await extractErrorMessage(fileRes);
             if (fileRes.status === 404) {
-                // Stale File ID - Clear and retry
                 updateSystemMeta({ driveFileId: undefined, driveFileUrl: undefined });
-                return syncWithCloud(token);
+                return syncWithCloud(token, fileId);
             }
             throw new Error(`Vault download failed: ${msg}`);
         }
@@ -214,14 +208,14 @@ export const syncWithCloud = async (providedToken?: string): Promise<{success: b
             lastCloudSync: new Date().toISOString() 
         });
 
-        return { true: true, message: `Cloud data merged for ${email}` } as any;
+        return { success: true, message: `Synced with Team Repository (${email})` };
     } catch (err: any) {
         console.error("Sync Failure:", err);
         return { success: false, message: err.message || "Cloud unreachable or network error." };
     }
 };
 
-export const pushToCloud = async (): Promise<{success: boolean, message: string}> => {
+export const pushToCloud = async (excludeId?: string): Promise<{success: boolean, message: string}> => {
     let meta = getSystemMeta();
     const token = meta.driveAccessToken;
     if (!token) return { success: false, message: "No active Drive link. Authorization required." };
@@ -237,7 +231,11 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         let fileId = meta.driveFileId;
         let fileUrl = meta.driveFileUrl;
 
-        // If we don't have a file ID, or if we need to search for it
+        if (fileId === excludeId) {
+            fileId = undefined;
+            fileUrl = undefined;
+        }
+
         if (!fileId) {
             const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
             const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, webViewLink)`, {
@@ -254,8 +252,13 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
             }
             
             const searchData = await searchRes.json();
-            fileId = searchData.files?.[0]?.id;
-            fileUrl = searchData.files?.[0]?.webViewLink;
+            const foundFiles = searchData.files || [];
+            const validFile = foundFiles.find((f: any) => f.id !== excludeId);
+            
+            if (validFile) {
+                fileId = validFile.id;
+                fileUrl = validFile.webViewLink;
+            }
         }
 
         if (!fileId) {
@@ -288,16 +291,14 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
                 return { success: false, message: "Session expired while uploading." };
             }
             if (uploadRes.status === 404) {
-                // File was likely deleted manually from Drive.
-                // Clear the ID and retry the logic (it will search or create a new one)
                 updateSystemMeta({ driveFileId: undefined, driveFileUrl: undefined });
-                return pushToCloud();
+                return pushToCloud(fileId);
             }
             throw new Error(msg);
         }
 
-        updateSystemMeta({ lastCloudSync: new Date().toISOString(), driveFileUrl: fileUrl });
-        return { success: true, message: "Synced to Drive successfully." };
+        updateSystemMeta({ driveFileId: fileId, driveFileUrl: fileUrl, lastCloudSync: new Date().toISOString() });
+        return { success: true, message: "Pushed to Shared Vault successfully." };
     } catch (err: any) {
         return { success: false, message: err.message || "Unknown Cloud Error." };
     }

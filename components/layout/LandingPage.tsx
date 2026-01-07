@@ -6,6 +6,7 @@ import * as db from '../../services/db';
 import { Project, FramingMaterial, FinishMaterial, ProductionLog, LocationExpense } from '../../types';
 import HelpGuideModal from '../modules/HelpGuideModal';
 import { calculateProjectCost } from '../../services/costingService';
+import Button from '../ui/Button';
 
 declare const Chart: any;
 
@@ -15,23 +16,25 @@ interface LandingPageProps {
 }
 
 const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
-    const { currentUser } = useAppContext();
+    const { currentUser, showNotification } = useAppContext();
     const [stats, setStats] = useState({
         pipelineValue: 0, activeJobs: 0, monthlyBurn: 0, efficiencyIndex: 0
     });
     const [recentProjects, setRecentProjects] = useState<Project[]>([]);
     const [isHelpOpen, setIsHelpOpen] = useState(false);
     const [logo] = useState<string | null>(db.getSystemLogo());
+    const [meta, setMeta] = useState(db.getSystemMeta());
+    const [isSyncing, setIsSyncing] = useState(false);
 
-    const profitChartRef = useRef<HTMLCanvasElement>(null);
+    const profitChartRef = useRef<CanvasRenderingContext2D | null>(null);
     const chartInstances = useRef<any[]>([]);
 
-    useEffect(() => {
+    const refreshDashboardData = () => {
         const projects = db.getData<Project>('projects');
-        const logs = db.getData<ProductionLog>('productionLogs');
         const expenses = db.getData<LocationExpense>('locationExpenses');
         const framing = db.getData<FramingMaterial>('framingMaterials');
         const finish = db.getData<FinishMaterial>('finishMaterials');
+        setMeta(db.getSystemMeta());
 
         // Logic for Financial Momentum (Last 6 Months)
         const labels: string[] = [];
@@ -46,12 +49,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
             const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
             const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
 
-            // Estimate Revenue from finished projects
             const monthRev = projects
                 .filter(p => parseInt(p.projectStatus) >= 95 && p.updatedAt && new Date(p.updatedAt) >= monthStart && new Date(p.updatedAt) <= monthEnd)
                 .reduce((acc, p) => acc + calculateProjectCost(p, framing, finish).salesPrice, 0);
             
-            // Actual Burn from logged expenses
             const monthBurn = expenses
                 .filter(e => new Date(e.date) >= monthStart && new Date(e.date) <= monthEnd)
                 .reduce((acc, e) => acc + (parseFloat(e.amount.toString()) || 0), 0);
@@ -70,26 +71,49 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
             efficiencyIndex: (revenueData[5] > 0) ? (revenueData[5] / (burnData[5] || 1)) : 1.2
         });
 
-        if (profitChartRef.current) {
-            const ctx = profitChartRef.current.getContext('2d');
-            chartInstances.current.push(new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [
-                        { label: 'Revenue Realized', data: revenueData, backgroundColor: '#3b82f6', borderRadius: 8 },
-                        { label: 'Operational Burn', data: burnData, backgroundColor: '#f87171', borderRadius: 8 }
-                    ]
-                },
-                options: { 
-                    responsive: true, maintainAspectRatio: false, 
-                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { weight: 'bold', size: 10 } } } },
-                    scales: { y: { beginAtZero: true, grid: { display: false } } }
-                }
-            }));
-        }
-
         setRecentProjects([...projects].sort((a,b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()).slice(0, 4));
+        return { labels, revenueData, burnData };
+    };
+
+    const handleManualSync = async () => {
+        if (!meta.driveAccessToken) {
+            showNotification("Please link cloud repository first.", "warning");
+            return;
+        }
+        setIsSyncing(true);
+        const res = await db.syncWithCloud();
+        setIsSyncing(false);
+        if (res.success) {
+            showNotification("Project Vault Synchronized with Team.");
+            refreshDashboardData();
+        } else {
+            showNotification(res.message, "error");
+        }
+    };
+
+    useEffect(() => {
+        const { labels, revenueData, burnData } = refreshDashboardData();
+
+        if (document.getElementById('profitChart')) {
+            const ctx = (document.getElementById('profitChart') as HTMLCanvasElement).getContext('2d');
+            if (ctx) {
+                chartInstances.current.push(new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [
+                            { label: 'Revenue Realized', data: revenueData, backgroundColor: '#3b82f6', borderRadius: 8 },
+                            { label: 'Operational Burn', data: burnData, backgroundColor: '#f87171', borderRadius: 8 }
+                        ]
+                    },
+                    options: { 
+                        responsive: true, maintainAspectRatio: false, 
+                        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { weight: 'bold', size: 10 } } } },
+                        scales: { y: { beginAtZero: true, grid: { display: false } } }
+                    }
+                }));
+            }
+        }
 
         return () => {
             chartInstances.current.forEach(c => c.destroy());
@@ -112,6 +136,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
             </div>
         </div>
     );
+
+    const isCloudConnected = !!meta.driveAccessToken;
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-12">
@@ -143,6 +169,39 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
             </header>
 
             <main className="max-w-7xl mx-auto p-4 md:p-8 space-y-8 animate-fade-in">
+                {/* Team Collaboration Summary */}
+                <section className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-6">
+                        <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center text-2xl shadow-inner ${isCloudConnected ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
+                            <Icon name={isCloudConnected ? "fas fa-network-wired" : "fas fa-unlink"} />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black uppercase tracking-tighter text-slate-900 flex items-center gap-2">
+                                Shared Team Repository
+                                {isCloudConnected && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
+                            </h3>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                {isCloudConnected ? `Linked to ${meta.connectedEmail} • Syncing with Team Vault` : 'Not linked to a team repository. Local mode only.'}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="text-right hidden sm:block">
+                            <p className="text-[9px] font-black text-slate-400 uppercase">Last Global Sync</p>
+                            <p className="text-xs font-bold text-slate-700">{meta.lastCloudSync ? new Date(meta.lastCloudSync).toLocaleTimeString() : 'N/A'}</p>
+                        </div>
+                        <Button 
+                            onClick={handleManualSync} 
+                            disabled={isSyncing} 
+                            variant={isCloudConnected ? "success" : "default"} 
+                            icon={isSyncing ? "fas fa-sync animate-spin" : "fas fa-cloud-download-alt"}
+                            className="px-8 py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl"
+                        >
+                            {isSyncing ? 'Syncing...' : 'Fetch Team Changes'}
+                        </Button>
+                    </div>
+                </section>
+
                 {/* Metrics */}
                 <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <StatCard title="Pipeline Value" value={`₦${(stats.pipelineValue/1000000).toFixed(1)}M`} icon="fas fa-vault" color="bg-slate-900" subtitle={`${stats.activeJobs} Jobs WIP`} />
@@ -165,7 +224,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
                             </div>
                         </div>
                         <div className="flex-grow">
-                            <canvas ref={profitChartRef}></canvas>
+                            <canvas id="profitChart"></canvas>
                         </div>
                     </div>
 

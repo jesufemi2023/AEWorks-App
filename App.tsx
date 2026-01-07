@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { User, Notification as NotificationType, AuthUser } from './types';
 import { AppContextProvider } from './context/AppContext';
@@ -30,26 +31,29 @@ const App: React.FC = () => {
 
     // Resilient Background Sync Logic
     useEffect(() => {
-        const handleOnline = () => {
+        const triggerSync = () => {
             const meta = db.getSystemMeta();
-            if (meta.driveAccessToken) {
-                console.log("Network Restored: Syncing Drive...");
+            if (navigator.onLine && meta.driveAccessToken) {
+                console.log("Sync Triggered: Refreshing cloud data...");
                 db.syncWithCloud().catch(() => {});
             }
         };
 
-        window.addEventListener('online', handleOnline);
-        
-        // Periodic background consistency check (every 10 mins)
-        const interval = setInterval(() => {
-            const meta = db.getSystemMeta();
-            if (navigator.onLine && meta.driveAccessToken) {
-                db.syncWithCloud().catch(() => {});
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                triggerSync();
             }
-        }, 600000);
+        };
+
+        window.addEventListener('online', triggerSync);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        
+        // Periodic background check (every 2 mins for collaboration)
+        const interval = setInterval(triggerSync, 120000);
 
         return () => {
-            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('online', triggerSync);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             clearInterval(interval);
         };
     }, []);

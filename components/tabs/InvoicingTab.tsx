@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import TabContent from './TabContent';
 import { useProjectContext } from '../../hooks/useProjectContext';
@@ -18,6 +19,17 @@ const InvoicingTab: React.FC = () => {
     const logo = db.getSystemLogo();
 
     const invoiceItems = useMemo(() => {
+        // Handle Manual Valuation Override
+        if (currentProject.useManualValuation && currentProject.manualItems && currentProject.manualItems.length > 0) {
+            return currentProject.manualItems.map(item => ({
+                desc: item.scope || 'Custom Scope Item',
+                qty: 1,
+                rate: item.amount || 0,
+                amount: item.amount || 0
+            }));
+        }
+
+        // Standard Automatic Job-based Logic
         return currentProject.jobs.map(job => {
             const jobCost = costResults.jobBreakdowns.find(jb => jb.jobId === job.id);
             // Apply markup to each job for the invoice line items
@@ -31,7 +43,7 @@ const InvoicingTab: React.FC = () => {
                 amount: rate
             };
         });
-    }, [currentProject.jobs, costResults]);
+    }, [currentProject.jobs, currentProject.useManualValuation, currentProject.manualItems, currentProject.costingVariables.markup_percent, costResults]);
 
     const subtotal = invoiceItems.reduce((sum, item) => sum + item.amount, 0);
     const vat = subtotal * 0.075; // Standard 7.5% VAT
@@ -47,7 +59,12 @@ const InvoicingTab: React.FC = () => {
                 {/* Control Sidebar */}
                 <div className="lg:col-span-1 space-y-4 print:hidden">
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                        <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest border-b pb-1">Document Parameters</h4>
+                        <div className="flex justify-between items-center border-b pb-1">
+                            <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Document Parameters</h4>
+                            {currentProject.useManualValuation && (
+                                <span className="text-[8px] font-black bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded uppercase">Manual Mode</span>
+                            )}
+                        </div>
                         <div>
                             <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Document Type</label>
                             <select 
@@ -161,6 +178,11 @@ const InvoicingTab: React.FC = () => {
                                             <td className="py-5 text-right text-sm font-black text-slate-900">₦{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                         </tr>
                                     ))}
+                                    {invoiceItems.length === 0 && (
+                                        <tr>
+                                            <td colSpan={4} className="py-10 text-center text-slate-300 italic">No billable items detected in current mode.</td>
+                                        </tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>

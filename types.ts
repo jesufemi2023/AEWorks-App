@@ -1,3 +1,4 @@
+
 export interface User {
     username: string;
     email: string;
@@ -139,6 +140,12 @@ export interface WorkTeamSpec {
     assignedStaffIds?: string[];
 }
 
+export interface ManualValuationItem {
+    id: string;
+    scope: string;
+    amount: number;
+}
+
 export interface Project {
     id?: string;
     projName: string;
@@ -172,6 +179,8 @@ export interface Project {
     trackingData?: ProjectTrackingData;
     workTeamSpec?: WorkTeamSpec;
     isCloudSynced?: boolean;
+    useManualValuation?: boolean;
+    manualItems?: ManualValuationItem[];
 }
 
 // Performance and Profitability Tracking

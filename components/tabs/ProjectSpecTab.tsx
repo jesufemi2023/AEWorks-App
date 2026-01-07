@@ -6,7 +6,7 @@ import { NIGERIAN_CITIES, STATUS_STAGES } from '../../constants';
 import Button from '../ui/Button';
 import Icon from '../ui/Icon';
 import { useAppContext } from '../../hooks/useAppContext';
-import { Project, Job } from '../../types';
+import { Project, Job, ManualValuationItem } from '../../types';
 import * as db from '../../services/db';
 
 const ProjectSpecTab: React.FC = () => {
@@ -113,6 +113,42 @@ const ProjectSpecTab: React.FC = () => {
         }
     };
 
+    const handleToggleManualValuation = () => {
+        const newState = !currentProject.useManualValuation;
+        setCurrentProject(prev => ({
+            ...prev,
+            useManualValuation: newState,
+            manualItems: newState ? (prev.manualItems?.length ? prev.manualItems : [{ id: db.generateId(), scope: 'Base Contract Value', amount: 0 }]) : prev.manualItems
+        }));
+        showNotification(newState ? "Manual Valuation Mode Active" : "Automatic Costing Active", "warning");
+    };
+
+    const handleAddManualItem = () => {
+        const newItem: ManualValuationItem = {
+            id: db.generateId(),
+            scope: '',
+            amount: 0
+        };
+        setCurrentProject(prev => ({
+            ...prev,
+            manualItems: [...(prev.manualItems || []), newItem]
+        }));
+    };
+
+    const handleUpdateManualItem = (id: string, field: keyof ManualValuationItem, value: any) => {
+        setCurrentProject(prev => ({
+            ...prev,
+            manualItems: prev.manualItems?.map(item => item.id === id ? { ...item, [field]: value } : item)
+        }));
+    };
+
+    const handleDeleteManualItem = (id: string) => {
+        setCurrentProject(prev => ({
+            ...prev,
+            manualItems: prev.manualItems?.filter(item => item.id !== id)
+        }));
+    };
+
     const renderInputRow = (label: string, id: keyof typeof currentProject, type = 'text', options?: {value: string, label: string}[], readOnly = false) => {
         if (id === 'clientName') {
             return (
@@ -169,6 +205,61 @@ const ProjectSpecTab: React.FC = () => {
                             {renderInputRow("Project Code", "projectCode", "text", [], true)}
                             {renderInputRow("Current Stage", "projectStatus", "select", STATUS_STAGES.map(s => ({ value: s.value.toString(), label: s.name })))}
                         </div>
+                    </div>
+
+                    {/* Financial Overrides Section */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 border-l-4 border-l-blue-600">
+                        <div className="flex justify-between items-center mb-3 border-b pb-1">
+                            <h4 className="text-[10px] font-black uppercase text-blue-600 tracking-widest">Financial Overrides</h4>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Manual Valuation</span>
+                                <button 
+                                    onClick={handleToggleManualValuation}
+                                    className={`w-10 h-5 rounded-full relative transition-colors ${currentProject.useManualValuation ? 'bg-blue-600' : 'bg-slate-200'}`}
+                                >
+                                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${currentProject.useManualValuation ? 'left-[22px]' : 'left-0.5'}`}></div>
+                                </button>
+                            </div>
+                        </div>
+
+                        {currentProject.useManualValuation ? (
+                            <div className="space-y-2 animate-fade-in">
+                                <div className="bg-blue-50 p-2 rounded text-[10px] text-blue-700 font-bold mb-2 flex items-center gap-2">
+                                    <Icon name="fas fa-info-circle" />
+                                    Manual Mode active: The values below will be used for Invoicing instead of calculated costs.
+                                </div>
+                                <div className="space-y-1">
+                                    {currentProject.manualItems?.map((item, index) => (
+                                        <div key={item.id} className="flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-100 group">
+                                            <div className="w-6 h-6 flex items-center justify-center bg-slate-800 text-white rounded text-[10px] font-bold shrink-0">{index + 1}</div>
+                                            <input 
+                                                type="text" 
+                                                value={item.scope} 
+                                                onChange={(e) => handleUpdateManualItem(item.id, 'scope', e.target.value)}
+                                                className="flex-grow bg-white border border-slate-200 p-1 rounded text-xs font-bold text-slate-800"
+                                                placeholder="Scope Description (e.g. Design & Install)..."
+                                            />
+                                            <div className="relative w-32 shrink-0">
+                                                <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">₦</span>
+                                                <input 
+                                                    type="number" 
+                                                    value={item.amount || ''} 
+                                                    onChange={(e) => handleUpdateManualItem(item.id, 'amount', parseFloat(e.target.value) || 0)}
+                                                    className="w-full pl-5 p-1 border border-slate-200 rounded text-xs font-black text-right text-blue-600"
+                                                    placeholder="0.00"
+                                                />
+                                            </div>
+                                            <button onClick={() => handleDeleteManualItem(item.id)} className="text-slate-300 hover:text-red-500 p-1 transition-all shrink-0"><Icon name="fas fa-trash-alt" className="text-xs"/></button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex justify-end mt-2">
+                                    <Button onClick={handleAddManualItem} variant="outline" size="sm" className="py-1 px-3 text-[9px]" icon="fas fa-plus">Add Scope Item</Button>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-[10px] text-slate-400 italic">Project is currently using the automated material/labor costing engine.</p>
+                        )}
                     </div>
 
                     {/* Job Management Section */}
