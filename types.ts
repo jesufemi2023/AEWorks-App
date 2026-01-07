@@ -55,6 +55,7 @@ export interface FramingMaterial {
 export interface FinishMaterial {
     id: string;
     'MATERIAL / GROUP': string;
+    'MATERIAL_GROUP'?: string; // Compatibility
     'NAME - MATERIAL': string;
     'PRICE': string;
     'Coverage': string;
@@ -245,6 +246,13 @@ export interface PayrollRunItem {
         companyPension: number;
         medicals: number;
         workmen: number;
+    };
+    manualDeductionFlags?: {
+        paye?: boolean;
+        staffPension?: boolean;
+        companyPension?: boolean;
+        medicals?: boolean;
+        workmen?: boolean;
     };
 }
 

@@ -27,6 +27,7 @@ const DAILY_RATE_DEFAULTS = {
 };
 
 const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) => {
+    // Destructuring both currentUser and setCurrentUser from AppContext
     const { currentUser, setCurrentUser, showNotification } = useAppContext();
     const [activeTab, setActiveTab] = useState<'run' | 'history' | 'approvals'>('run');
     
@@ -71,13 +72,22 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
 
     const calculateItemFinancials = (item: PayrollRunItem, rates: typeof DEFAULT_RATES) => {
         const grossPay = item.disbursements.reduce((sum, d) => sum + d.amount, 0);
-        
         const isPerm = item.category === 'Staff - Permanent';
-        const paye = grossPay * ((isPerm ? rates.payePerm : rates.payeCont) / 100);
-        const staffPension = isPerm ? (grossPay * (rates.staffPension / 100)) : 0;
-        const companyPension = grossPay * (rates.companyPension / 100);
-        const medicals = grossPay * (rates.medicals / 100);
-        const workmen = grossPay * (rates.workmen / 100);
+        const flags = item.manualDeductionFlags || {};
+        
+        // Calculate Auto Values
+        const autoPAYE = grossPay * ((isPerm ? rates.payePerm : rates.payeCont) / 100);
+        const autoStaffPension = isPerm ? (grossPay * (rates.staffPension / 100)) : 0;
+        const autoCompanyPension = grossPay * (rates.companyPension / 100);
+        const autoMedicals = grossPay * (rates.medicals / 100);
+        const autoWorkmen = grossPay * (rates.workmen / 100);
+
+        // Apply Logic: Priority to manual flags
+        const paye = flags.paye ? item.deductions.paye : autoPAYE;
+        const staffPension = flags.staffPension ? item.deductions.staffPension : autoStaffPension;
+        const companyPension = flags.companyPension ? item.deductions.companyPension : autoCompanyPension;
+        const medicals = flags.medicals ? item.deductions.medicals : autoMedicals;
+        const workmen = flags.workmen ? item.deductions.workmen : autoWorkmen;
 
         const totalDeductions = paye + staffPension + medicals + workmen + (item.iou || 0);
         const netPay = grossPay - totalDeductions;
@@ -97,6 +107,33 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
         const personnelCost = items.reduce((sum, i) => sum + (i.grossPay + i.deductions.companyPension), 0);
         
         return { gross, net, personnelCost };
+    };
+
+    const handleUpdateBatchRates = (key: keyof typeof DEFAULT_RATES, value: number) => {
+        const newRates = { ...currentRun.rates, [key]: value };
+        const newItems = currentRun.items.map(item => calculateItemFinancials(item, newRates));
+        setCurrentRun({
+            ...currentRun,
+            rates: newRates,
+            items: newItems,
+            totals: updateRunTotals(newItems)
+        });
+    };
+
+    const handleUpdateManualDeduction = (runItemId: string, field: keyof PayrollRunItem['deductions'], value: number) => {
+        const newItems = currentRun.items.map(item => {
+            if (item.id !== runItemId) return item;
+            
+            const updatedItem = {
+                ...item,
+                deductions: { ...item.deductions, [field]: value },
+                manualDeductionFlags: { ...item.manualDeductionFlags, [field]: true }
+            };
+            
+            return calculateItemFinancials(updatedItem, currentRun.rates);
+        });
+
+        setCurrentRun({ ...currentRun, items: newItems, totals: updateRunTotals(newItems) });
     };
 
     const getAutoDescription = (type: string, projectName?: string) => {
@@ -126,7 +163,8 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
             iou: 0,
             grossPay: 0,
             netPay: 0,
-            deductions: { paye: 0, staffPension: 0, companyPension: 0, medicals: 0, workmen: 0 }
+            deductions: { paye: 0, staffPension: 0, companyPension: 0, medicals: 0, workmen: 0 },
+            manualDeductionFlags: {}
         };
     };
 
@@ -230,7 +268,8 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
             ...currentRun,
             id: db.generateId(),
             items: [],
-            totals: { gross: 0, net: 0, personnelCost: 0 }
+            totals: { gross: 0, net: 0, personnelCost: 0 },
+            rates: { ...DEFAULT_RATES }
         });
     };
 
@@ -357,10 +396,10 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
 
                                 <div className="space-y-1 text-[9px] text-slate-500 mb-6">
                                     <p className="font-black text-slate-400 uppercase tracking-widest mb-1">Statutory Deductions</p>
-                                    <div className="flex justify-between"><span>Income Tax (PAYE):</span><span className="font-bold text-red-600">-{formatN(item.deductions.paye)}</span></div>
-                                    <div className="flex justify-between"><span>Staff Pension (7.5%):</span><span className="font-bold text-red-600">-{formatN(item.deductions.staffPension)}</span></div>
-                                    <div className="flex justify-between"><span>Health Insurance:</span><span className="font-bold text-red-600">-{formatN(item.deductions.medicals)}</span></div>
-                                    <div className="flex justify-between"><span>Liability Cover:</span><span className="font-bold text-red-600">-{formatN(item.deductions.workmen)}</span></div>
+                                    <div className="flex justify-between"><span>Income Tax (PAYE):</span><span className="font-bold text-red-600">{formatN(item.deductions.paye)}</span></div>
+                                    <div className="flex justify-between"><span>Staff Pension (7.5%):</span><span className="font-bold text-red-600">{formatN(item.deductions.staffPension)}</span></div>
+                                    <div className="flex justify-between"><span>Health Insurance:</span><span className="font-bold text-red-600">{formatN(item.deductions.medicals)}</span></div>
+                                    <div className="flex justify-between"><span>Liability Cover:</span><span className="font-bold text-red-600">{formatN(item.deductions.workmen)}</span></div>
                                     {item.iou > 0 && <div className="flex justify-between font-black text-red-700 bg-red-50 p-1 mt-1 rounded"><span>IOU / Advance Repayment:</span><span>-{formatN(item.iou)}</span></div>}
                                 </div>
                             </div>
@@ -418,57 +457,67 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                     <div className="flex-grow overflow-y-auto p-4 space-y-6">
                         {activeTab === 'run' && isLoaded && (
                             <>
-                                {staff.length > 0 ? (
-                                    <>
+                                <div>
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Batch Identity</h4>
+                                    <div className="space-y-3">
                                         <div>
-                                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Batch Identity</h4>
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Payment Date</label>
-                                                    <input type="date" value={currentRun.paymentDate} onChange={e => setCurrentRun({...currentRun, paymentDate: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-black bg-slate-50 focus:bg-white outline-none"/>
-                                                </div>
-                                                <div>
-                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Period Descriptor</label>
-                                                    <input type="text" value={currentRun.month} onChange={e => setCurrentRun({...currentRun, month: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-black bg-slate-50 focus:bg-white outline-none"/>
-                                                </div>
-                                            </div>
-                                            <div className="mt-4">
-                                                <Button onClick={handleSyncAllStaff} variant="primary" icon="fas fa-users-cog" size="sm" className="w-full py-3 text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/10">Bulk Auto-Fill Staff</Button>
-                                            </div>
+                                            <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Payment Date</label>
+                                            <input type="date" value={currentRun.paymentDate} onChange={e => setCurrentRun({...currentRun, paymentDate: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-black bg-slate-50 focus:bg-white outline-none"/>
                                         </div>
-
                                         <div>
-                                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 border-t border-slate-100 pt-4">Manual Selection</h4>
-                                            <div className="space-y-1 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
-                                                {staff.map(person => {
-                                                    const inBatch = currentRun.items.some(i => i.staffId === person.id);
-                                                    return (
-                                                        <button 
-                                                            key={person.id}
-                                                            onClick={() => handleAddStaffToRun(person)}
-                                                            disabled={inBatch}
-                                                            className={`w-full text-left p-3 rounded-xl border transition-all flex justify-between items-center group ${inBatch ? 'bg-slate-50 border-slate-100 opacity-40 cursor-default' : 'bg-white border-slate-100 hover:bg-blue-50 hover:border-blue-200'}`}
-                                                        >
-                                                            <div>
-                                                                <p className={`text-xs font-black uppercase tracking-tight ${inBatch ? 'text-slate-400' : 'text-slate-800'}`}>{person.name}</p>
-                                                                <p className="text-[9px] text-slate-400 font-bold uppercase">{person.category}</p>
-                                                            </div>
-                                                            {!inBatch && <Icon name="fas fa-plus-circle" className="text-slate-200 group-hover:text-blue-500 transition-colors"/>}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
+                                            <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Period Descriptor</label>
+                                            <input type="text" value={currentRun.month} onChange={e => setCurrentRun({...currentRun, month: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-black bg-slate-50 focus:bg-white outline-none"/>
                                         </div>
-                                    </>
-                                ) : (
-                                    <div className="py-12 px-4 text-center">
-                                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300">
-                                            <Icon name="fas fa-user-slash" className="text-2xl" />
-                                        </div>
-                                        <h4 className="font-black text-sm uppercase text-slate-900 mb-2">Registry Empty</h4>
-                                        <Button onClick={() => onNavigate && onNavigate('project-board')} variant="primary" size="sm" icon="fas fa-address-card" className="w-full text-[10px] uppercase">Personnel Vault</Button>
                                     </div>
-                                )}
+                                </div>
+
+                                <div>
+                                    <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-3 border-t border-slate-100 pt-4">Statutory Benchmarks (%)</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">PAYE (Perm)</label>
+                                            <input type="number" value={currentRun.rates.payePerm} onChange={e => handleUpdateBatchRates('payePerm', +e.target.value)} className="w-full p-2 border border-slate-100 rounded bg-slate-50 text-[10px] font-black text-center"/>
+                                        </div>
+                                        <div>
+                                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">PAYE (Cont)</label>
+                                            <input type="number" value={currentRun.rates.payeCont} onChange={e => handleUpdateBatchRates('payeCont', +e.target.value)} className="w-full p-2 border border-slate-100 rounded bg-slate-50 text-[10px] font-black text-center"/>
+                                        </div>
+                                        <div>
+                                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Pension</label>
+                                            <input type="number" value={currentRun.rates.staffPension} onChange={e => handleUpdateBatchRates('staffPension', +e.target.value)} className="w-full p-2 border border-slate-100 rounded bg-slate-50 text-[10px] font-black text-center"/>
+                                        </div>
+                                        <div>
+                                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Insurance</label>
+                                            <input type="number" value={currentRun.rates.workmen} onChange={e => handleUpdateBatchRates('workmen', +e.target.value)} className="w-full p-2 border border-slate-100 rounded bg-slate-50 text-[10px] font-black text-center"/>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="flex justify-between items-center mb-3 border-t border-slate-100 pt-4">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Staff Registry</h4>
+                                        <button onClick={handleSyncAllStaff} className="text-[9px] font-black text-blue-600 uppercase underline">Bulk Fill</button>
+                                    </div>
+                                    <div className="space-y-1 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
+                                        {staff.map(person => {
+                                            const inBatch = currentRun.items.some(i => i.staffId === person.id);
+                                            return (
+                                                <button 
+                                                    key={person.id}
+                                                    onClick={() => handleAddStaffToRun(person)}
+                                                    disabled={inBatch}
+                                                    className={`w-full text-left p-3 rounded-xl border transition-all flex justify-between items-center group ${inBatch ? 'bg-slate-50 border-slate-100 opacity-40 cursor-default' : 'bg-white border-slate-100 hover:bg-blue-50 hover:border-blue-200'}`}
+                                                >
+                                                    <div>
+                                                        <p className={`text-xs font-black uppercase tracking-tight ${inBatch ? 'text-slate-400' : 'text-slate-800'}`}>{person.name}</p>
+                                                        <p className="text-[9px] text-slate-400 font-bold uppercase">{person.category}</p>
+                                                    </div>
+                                                    {!inBatch && <Icon name="fas fa-plus-circle" className="text-slate-200 group-hover:text-blue-500 transition-colors"/>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                             </>
                         )}
 
@@ -502,7 +551,7 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Calculated Net</span>
                                 <span className="text-xl font-black text-blue-400">{formatN(currentRun.totals.net)}</span>
                             </div>
-                            <Button onClick={handleSaveRun} variant="primary" icon="fas fa-upload" className="w-full py-4 text-[10px] uppercase shadow-2xl shadow-blue-500/20">Submit for Approval</Button>
+                            <Button onClick={handleSaveRun} variant="primary" icon="fas fa-upload" className="w-full py-4 text-[10px] uppercase shadow-2xl shadow-blue-500/20">Submit Batch</Button>
                         </div>
                     )}
                 </div>
@@ -569,7 +618,7 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                             </div>
                         ) : (
                             currentRun.items.map((item) => (
-                                <div key={item.id} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in-up">
+                                <div key={item.id} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in-up mb-4">
                                     <div className="bg-slate-900 text-white p-4 flex justify-between items-center">
                                         <div className="flex items-center gap-4">
                                             <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center font-black text-lg shadow-lg rotate-3">{item.staffName.charAt(0)}</div>
@@ -637,11 +686,48 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                                         </div>
 
                                         <div className="bg-slate-950 text-white p-6 rounded-3xl space-y-4 shadow-xl">
-                                            <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-800 pb-3 mb-4">Statutory Deductions</h5>
-                                            <div className="space-y-3 text-[11px] font-bold">
-                                                <div className="flex justify-between"><span>Income Tax (PAYE):</span><span className="text-red-400">-{formatN(item.deductions.paye)}</span></div>
-                                                <div className="flex justify-between"><span>Staff Pension:</span><span className="text-red-400">-{formatN(item.deductions.staffPension)}</span></div>
-                                                <div className="flex justify-between"><span>Liability/Insurance:</span><span className="text-red-400">-{formatN(item.deductions.medicals + item.deductions.workmen)}</span></div>
+                                            <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-800 pb-3 mb-4">Statutory Deductions (Editable)</h5>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="flex justify-between text-[9px] font-black uppercase text-slate-500 mb-1">
+                                                        <span>Income Tax (PAYE)</span>
+                                                        {item.manualDeductionFlags?.paye && <span className="text-amber-500">Manual Override</span>}
+                                                    </label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={item.deductions.paye} 
+                                                        onChange={e => handleUpdateManualDeduction(item.id, 'paye', +e.target.value)}
+                                                        className={`w-full p-2 rounded-lg bg-slate-900 border text-xs font-black ${item.manualDeductionFlags?.paye ? 'border-amber-500 text-amber-500' : 'border-slate-800 text-white'}`}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="flex justify-between text-[9px] font-black uppercase text-slate-500 mb-1">
+                                                        <span>Staff Pension</span>
+                                                        {item.manualDeductionFlags?.staffPension && <span className="text-amber-500">Manual Override</span>}
+                                                    </label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={item.deductions.staffPension} 
+                                                        onChange={e => handleUpdateManualDeduction(item.id, 'staffPension', +e.target.value)}
+                                                        className={`w-full p-2 rounded-lg bg-slate-900 border text-xs font-black ${item.manualDeductionFlags?.staffPension ? 'border-amber-500 text-amber-500' : 'border-slate-800 text-white'}`}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="flex justify-between text-[9px] font-black uppercase text-slate-500 mb-1">
+                                                        <span>Liability / Insurance</span>
+                                                        {(item.manualDeductionFlags?.medicals || item.manualDeductionFlags?.workmen) && <span className="text-amber-500">Manual Override</span>}
+                                                    </label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={item.deductions.medicals + item.deductions.workmen} 
+                                                        onChange={e => {
+                                                            const val = +e.target.value;
+                                                            handleUpdateManualDeduction(item.id, 'medicals', val / 2);
+                                                            handleUpdateManualDeduction(item.id, 'workmen', val / 2);
+                                                        }}
+                                                        className={`w-full p-2 rounded-lg bg-slate-900 border text-xs font-black ${(item.manualDeductionFlags?.medicals || item.manualDeductionFlags?.workmen) ? 'border-amber-500 text-amber-500' : 'border-slate-800 text-white'}`}
+                                                    />
+                                                </div>
                                                 <div className="pt-4 mt-2 border-t border-slate-800">
                                                     <label className="text-[9px] font-black text-slate-500 uppercase ml-1 block mb-1">Staff Loan Repayment (IOU)</label>
                                                     <input 
@@ -651,7 +737,7 @@ const PayrollManager: React.FC<PayrollManagerProps> = ({ onBack, onNavigate }) =
                                                             const newItems = currentRun.items.map(i => i.id === item.id ? calculateItemFinancials({...i, iou: +e.target.value}, currentRun.rates) : i);
                                                             setCurrentRun({...currentRun, items: newItems, totals: updateRunTotals(newItems)});
                                                         }}
-                                                        className="w-full p-3 border border-slate-800 rounded-xl text-xs font-black text-red-400 bg-slate-900 outline-none"
+                                                        className="w-full p-2.5 border border-slate-800 rounded-xl text-xs font-black text-red-400 bg-slate-900 outline-none"
                                                     />
                                                 </div>
                                             </div>
