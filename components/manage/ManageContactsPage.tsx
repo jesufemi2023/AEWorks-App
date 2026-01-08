@@ -1,7 +1,9 @@
+
 import React, { useRef, useState, useEffect } from 'react';
 import ManagePage from './ManagePage';
 import CrudTable, { Column } from './CrudTable';
 import Button from '../ui/Button';
+import Icon from '../ui/Icon';
 import { useProjectContext } from '../../hooks/useProjectContext';
 import * as db from '../../services/db';
 import { Contact } from '../../types';
@@ -32,6 +34,17 @@ const ManageContactsPage: React.FC<ManageContactsPageProps> = ({ goBack }) => {
             ]
         },
         { key: 'designation', label: 'Title / Role' },
+        { 
+            key: 'rating', 
+            label: 'Performance Score',
+            render: (val: number) => (
+                <div className="flex items-center gap-2">
+                    <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-lg text-[10px] font-black">
+                        <Icon name="fas fa-star" className="mr-1" /> {val || 5.0}
+                    </span>
+                </div>
+            )
+        },
         { key: 'phone1', label: 'Phone Number' },
         { key: 'email1', label: 'Email Address' },
     ];
@@ -52,6 +65,7 @@ const ManageContactsPage: React.FC<ManageContactsPageProps> = ({ goBack }) => {
         category: 'Staff - Contract',
         phone1: '',
         email1: '',
+        rating: 5.0,
         updatedAt: new Date().toISOString()
     });
 
@@ -77,6 +91,7 @@ const ManageContactsPage: React.FC<ManageContactsPageProps> = ({ goBack }) => {
                 category: (row.category || 'Staff - Contract') as any,
                 phone1: (row.phone || row.phone1 || '').trim(),
                 email1: (row.email || row.email1 || '').trim(),
+                rating: 5.0,
                 updatedAt: new Date().toISOString()
             })) as Contact[];
 
@@ -100,7 +115,7 @@ const ManageContactsPage: React.FC<ManageContactsPageProps> = ({ goBack }) => {
                     <div>
                         <h4 className="font-black text-blue-900 uppercase text-xs tracking-widest mb-1">Entity Management Protocol</h4>
                         <p className="text-xs text-blue-800 leading-relaxed max-w-2xl">
-                            All staff and external partners must be registered here. Use the <strong>Classification</strong> dropdown to distinguish between internal resources (Staff) and external leads (Prospects).
+                            All staff and external partners must be registered here. Performance scores are moving averages derived from project evaluations.
                         </p>
                     </div>
                 </div>

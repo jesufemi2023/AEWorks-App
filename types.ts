@@ -31,7 +31,23 @@ export interface Contact {
     phone1: string;
     email1: string;
     updatedAt?: string;
-    rating?: number; // Performance score (1-5)
+    rating?: number; // Lifetime Performance score (1-5)
+}
+
+export interface CustomerFeedback {
+    rating: number;
+    quality: number;
+    timeliness: number;
+    communication: number;
+    comments: string;
+    submittedAt: string;
+    verifiedAt?: string;
+}
+
+export interface WorkerEvaluation {
+    workerId: string;
+    rating: number; // 1-5
+    notes?: string;
 }
 
 export interface Centre {
@@ -122,6 +138,8 @@ export interface ProjectTrackingData {
     installationNotified?: boolean;
     closeoutNotes?: string;
     finalCloseoutDate?: string;
+    customerFeedback?: CustomerFeedback;
+    workerEvaluations?: WorkerEvaluation[];
 }
 
 export interface TaskAdjustment {

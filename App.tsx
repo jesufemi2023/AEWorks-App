@@ -9,6 +9,7 @@ import Notification from './components/ui/Notification';
 import LegacyAppContainer from './components/modules/LegacyAppContainer';
 import WorkManager from './components/modules/WorkManager';
 import PayrollManager from './components/modules/PayrollManager';
+import PublicFeedbackPortal from './components/portal/PublicFeedbackPortal';
 import { kpiMonitorHtml } from './components/modules/moduleContent';
 import * as db from './services/db';
 import { 
@@ -21,13 +22,14 @@ import {
     APP_VERSION
 } from './constants';
 
-type Module = 'dashboard' | 'project-board' | 'kpi-monitor' | 'payroll-manager' | 'work-manager';
+type Module = 'dashboard' | 'project-board' | 'kpi-monitor' | 'payroll-manager' | 'work-manager' | 'feedback-portal';
 
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [activeModule, setActiveModule] = useState<Module>('dashboard');
     const [notification, setNotification] = useState<NotificationType | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
+    const [portalToken, setPortalToken] = useState<string | null>(null);
 
     // Resilient Background Sync Logic
     useEffect(() => {
@@ -64,6 +66,14 @@ const App: React.FC = () => {
             const meta = db.getSystemMeta();
             const existingUsers = db.getData<AuthUser>('users');
             
+            // Check for Portal Token in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('p_feedback');
+            if (token) {
+                setPortalToken(token);
+                setActiveModule('feedback-portal');
+            }
+
             // 1. Local Fallback Provisioning
             if (existingUsers.length === 0 && !meta.driveAccessToken) {
                 db.saveData('users', INITIAL_USER_DATA as any);
@@ -105,6 +115,10 @@ const App: React.FC = () => {
     };
 
     const renderContent = () => {
+        if (activeModule === 'feedback-portal' && portalToken) {
+            return <PublicFeedbackPortal token={portalToken} />;
+        }
+
         switch (activeModule) {
             case 'project-board':
                 return <MainLayout onBack={() => setActiveModule('dashboard')} />;
@@ -139,7 +153,7 @@ const App: React.FC = () => {
 
     return (
         <AppContextProvider value={contextValue}>
-            {currentUser ? renderContent() : <LoginModal onLogin={handleLogin} />}
+            {(currentUser || activeModule === 'feedback-portal') ? renderContent() : <LoginModal onLogin={handleLogin} />}
             {notification && <Notification message={notification.message} type={notification.type} />}
         </AppContextProvider>
     );
