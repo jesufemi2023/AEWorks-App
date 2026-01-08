@@ -307,7 +307,8 @@ export enum View {
     MANAGE_CENTRES,
     MANAGE_MATERIALS,
     MANAGE_USERS,
-    TRACKER
+    TRACKER,
+    FEEDBACK_JOURNAL
 }
 
 export interface Notification {

@@ -13,6 +13,7 @@ import ManageCentresPage from '../manage/ManageCentresPage';
 import ManageMaterialsPage from '../manage/ManageMaterialsPage';
 import ManageUsersPage from '../manage/ManageUsersPage';
 import ProjectTrackerBoard from '../modules/ProjectTrackerBoard';
+import FeedbackJournal from '../modules/FeedbackJournal';
 import ForcePasswordChangeModal from '../auth/ForcePasswordChangeModal';
 import { ProjectContextProvider } from '../../context/ProjectContext';
 import { COST_VARS_STRUCTURE, NIGERIAN_CITIES } from '../../constants';
@@ -294,11 +295,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ onBack }) => {
             case View.MANAGE_MATERIALS: return <ManageMaterialsPage goBack={() => setView(View.DASHBOARD)} />;
             case View.MANAGE_USERS: return <ManageUsersPage goBack={() => setView(View.DASHBOARD)} />;
             case View.TRACKER: return <ProjectTrackerBoard setView={setView} />;
+            case View.FEEDBACK_JOURNAL: return <FeedbackJournal onBack={() => setView(View.DASHBOARD)} onOpenProject={(p) => { setCurrentProject(p); setView(View.DASHBOARD); }} />;
             default: return <TabContainer />;
         }
     };
 
-    const containerClass = view === View.TRACKER 
+    const isFullWidthView = view === View.TRACKER || view === View.FEEDBACK_JOURNAL;
+    const containerClass = isFullWidthView 
         ? "w-full px-2 h-[100dvh] flex flex-col" 
         : "max-w-7xl mx-auto p-1.5 md:p-2 h-[100dvh] flex flex-col";
 
@@ -333,7 +336,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ onBack }) => {
                     </button>
                 </div>
 
-                {view !== View.TRACKER && (
+                {view !== View.TRACKER && view !== View.FEEDBACK_JOURNAL && (
                     <div className="flex-shrink-0">
                         <StatusBar statusValue={parseInt(currentProject.projectStatus, 10)} onSetStatus={handleSetStatus} />
                     </div>

@@ -11,7 +11,7 @@ import Button from '../ui/Button';
 declare const Chart: any;
 
 interface LandingPageProps {
-    onNavigate: (module: 'project-board' | 'kpi-monitor' | 'payroll-manager' | 'work-manager') => void;
+    onNavigate: (module: 'project-board' | 'kpi-monitor' | 'payroll-manager' | 'work-manager' | 'feedback-journal') => void;
     onLogout: () => void;
 }
 
@@ -261,7 +261,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
                 </div>
 
                 {/* Navigation Grid */}
-                <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                     <div onClick={() => onNavigate('project-board')} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 hover:shadow-2xl hover:-translate-y-2 transition-all cursor-pointer group">
                         <div className="w-16 h-16 rounded-[1.5rem] bg-blue-50 text-blue-600 flex items-center justify-center text-3xl mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-inner">
                             <Icon name="fas fa-project-diagram" />
@@ -282,6 +282,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
                         </div>
                         <h3 className="font-black text-xl text-slate-900 uppercase tracking-tighter">Payroll</h3>
                         <p className="text-xs text-slate-400 font-bold mt-2 uppercase tracking-tighter">Personnel Disbursals</p>
+                    </div>
+                    <div onClick={() => onNavigate('feedback-journal')} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 hover:shadow-2xl hover:-translate-y-2 transition-all cursor-pointer group">
+                        <div className="w-16 h-16 rounded-[1.5rem] bg-indigo-50 text-indigo-600 flex items-center justify-center text-3xl mb-6 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
+                            <Icon name="fas fa-comments" />
+                        </div>
+                        <h3 className="font-black text-xl text-slate-900 uppercase tracking-tighter">Feedback</h3>
+                        <p className="text-xs text-slate-400 font-bold mt-2 uppercase tracking-tighter">Client Review Journal</p>
                     </div>
                     <div onClick={() => { localStorage.setItem('redirect_view', 'MANAGE_CENTRES'); onNavigate('project-board'); }} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 hover:shadow-2xl hover:-translate-y-2 transition-all cursor-pointer group">
                         <div className="w-16 h-16 rounded-[1.5rem] bg-slate-900 text-white flex items-center justify-center text-3xl mb-6 group-hover:bg-blue-600 transition-all shadow-inner">

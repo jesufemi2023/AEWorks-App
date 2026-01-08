@@ -22,7 +22,7 @@ import {
     APP_VERSION
 } from './constants';
 
-type Module = 'dashboard' | 'project-board' | 'kpi-monitor' | 'payroll-manager' | 'work-manager' | 'feedback-portal';
+type Module = 'dashboard' | 'project-board' | 'kpi-monitor' | 'payroll-manager' | 'work-manager' | 'feedback-portal' | 'feedback-journal';
 
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -125,6 +125,7 @@ const App: React.FC = () => {
 
         switch (activeModule) {
             case 'project-board':
+            case 'feedback-journal':
                 return <MainLayout onBack={() => setActiveModule('dashboard')} />;
             case 'kpi-monitor':
                 return <LegacyAppContainer htmlContent={kpiMonitorHtml} title="KPI Monitor" onBack={() => setActiveModule('dashboard')} />;
