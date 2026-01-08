@@ -18,7 +18,8 @@ const FeedbackJournal: React.FC<FeedbackJournalProps> = ({ onBack, onOpenProject
             .filter(p => p.trackingData?.customerFeedback)
             .map(p => ({
                 project: p,
-                feedback: p.trackingData!.customerFeedback!
+                feedback: p.trackingData!.customerFeedback!,
+                status: p.trackingData!.feedbackStatus || 'none'
             }))
             .sort((a, b) => new Date(b.feedback.submittedAt).getTime() - new Date(a.feedback.submittedAt).getTime());
     }, [projects]);
@@ -94,14 +95,21 @@ const FeedbackJournal: React.FC<FeedbackJournalProps> = ({ onBack, onOpenProject
                         <div className="py-32 text-center text-slate-300">
                             <Icon name="fas fa-comment-slash" className="text-6xl mb-4 opacity-20" />
                             <h3 className="text-xl font-black uppercase tracking-widest">No Records Found</h3>
-                            <p className="text-xs font-bold mt-2">Feedback logs will appear once projects reach 100% closeout.</p>
+                            <p className="text-xs font-bold mt-2">Customer submissions from AEWORKS_INBOX will appear here automatically.</p>
                         </div>
                     ) : (
-                        journalEntries.map(({ project, feedback }) => (
-                            <div key={project.projectCode} className="bg-white rounded-[2.5rem] p-6 md:p-8 border border-slate-100 shadow-sm hover:shadow-xl transition-all group animate-fade-in flex flex-col md:flex-row gap-8">
+                        journalEntries.map(({ project, feedback, status }) => (
+                            <div key={project.projectCode} className={`bg-white rounded-[2.5rem] p-6 md:p-8 border shadow-sm hover:shadow-xl transition-all group animate-fade-in flex flex-col md:flex-row gap-8 ${status === 'received' ? 'border-amber-200' : 'border-slate-100'}`}>
                                 <div className="md:w-64 shrink-0 space-y-4">
-                                    <div>
+                                    <div className="flex justify-between items-start">
                                         <span className="text-[9px] font-black bg-slate-900 text-white px-2 py-0.5 rounded uppercase tracking-tighter">{project.projectCode}</span>
+                                        {status === 'received' ? (
+                                            <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full uppercase border border-amber-200 animate-pulse">Pending Verification</span>
+                                        ) : (
+                                            <span className="text-[8px] font-black bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full uppercase border border-emerald-200">Verified</span>
+                                        )}
+                                    </div>
+                                    <div>
                                         <h4 className="text-lg font-black text-slate-900 uppercase tracking-tighter mt-2 leading-tight">{project.projName}</h4>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{project.clientName}</p>
                                     </div>
@@ -118,7 +126,7 @@ const FeedbackJournal: React.FC<FeedbackJournalProps> = ({ onBack, onOpenProject
                                             icon="fas fa-external-link-alt"
                                             className="w-full py-3 text-[9px] uppercase font-black tracking-widest rounded-xl bg-slate-100 text-slate-600 hover:bg-blue-600 hover:text-white border-none shadow-none group-hover:shadow-lg"
                                         >
-                                            View Source
+                                            View Project details
                                         </Button>
                                     </div>
                                 </div>
@@ -127,17 +135,17 @@ const FeedbackJournal: React.FC<FeedbackJournalProps> = ({ onBack, onOpenProject
                                     <div className="relative">
                                         <Icon name="fas fa-quote-left" className="absolute -top-4 -left-4 text-4xl text-slate-50 opacity-50" />
                                         <p className="text-slate-700 text-sm md:text-base font-medium italic leading-relaxed relative z-10 pl-2">
-                                            "{feedback.comments || 'No written commentary provided for this closeout.'}"
+                                            "{feedback.comments || 'No written commentary provided.'}"
                                         </p>
                                     </div>
                                     <div className="mt-8 pt-6 border-t border-slate-50 flex flex-wrap items-center justify-between gap-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-sm">
-                                                <Icon name="fas fa-user-check" />
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm ${status === 'verified' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                <Icon name={status === 'verified' ? "fas fa-user-check" : "fas fa-clock"} />
                                             </div>
                                             <div>
-                                                <p className="text-[10px] font-black uppercase text-slate-400 leading-none">Verified By</p>
-                                                <p className="text-xs font-black text-slate-800 uppercase tracking-tighter mt-1">{feedback.verifiedBy || 'System Admin'}</p>
+                                                <p className="text-[10px] font-black uppercase text-slate-400 leading-none">Status</p>
+                                                <p className="text-xs font-black text-slate-800 uppercase tracking-tighter mt-1">{status === 'verified' ? `Verified by ${feedback.verifiedBy}` : 'Awaiting Operations Check'}</p>
                                             </div>
                                         </div>
                                         <div className="text-right">
@@ -148,7 +156,7 @@ const FeedbackJournal: React.FC<FeedbackJournalProps> = ({ onBack, onOpenProject
                                 </div>
                                 
                                 <div className="shrink-0 flex items-center md:items-start justify-center">
-                                    <div className="w-20 h-20 bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-2xl shadow-blue-900/30 group-hover:scale-110 transition-transform">
+                                    <div className={`w-20 h-20 text-white rounded-3xl flex flex-col items-center justify-center shadow-2xl group-hover:scale-110 transition-transform ${status === 'received' ? 'bg-amber-500 shadow-amber-900/30' : 'bg-blue-600 shadow-blue-900/30'}`}>
                                         <p className="text-[10px] font-black uppercase opacity-60 leading-none mb-1">Score</p>
                                         <p className="text-3xl font-black leading-none">{feedback.rating}.0</p>
                                     </div>

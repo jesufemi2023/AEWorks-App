@@ -39,7 +39,6 @@ export const saveData = <T,>(key: string, data: T[]): boolean => {
             return item;
         });
         localStorage.setItem(key, JSON.stringify(dataWithMeta));
-        // Trigger a global event so UI components know to refresh their local state
         window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key } }));
         return true;
     } catch (error) {
@@ -112,14 +111,18 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
     if (!token) return { success: false, count: 0 };
 
     try {
+        console.log("Checking AEWORKS_INBOX for new customer signatures...");
         const folderQuery = encodeURIComponent(`name='${INBOX_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
         const folderRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}`, { headers: getDriveHeaders(token) });
         const folderData = await folderRes.json();
         
-        if (!folderData.files || folderData.files.length === 0) return { success: true, count: 0 };
+        if (!folderData.files || folderData.files.length === 0) {
+            console.warn("Folder AEWORKS_INBOX not found on Drive.");
+            return { success: true, count: 0 };
+        }
         const folderId = folderData.files[0].id;
 
-        const filesQuery = encodeURIComponent(`'${folderId}' in parents and (mimeType='application/json' or mimeType='text/plain') and trashed=false`);
+        const filesQuery = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
         const filesRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${filesQuery}&fields=files(id, name)`, { headers: getDriveHeaders(token) });
         const filesData = await filesRes.json();
         
@@ -137,18 +140,19 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
 
                 if (!feedbackData.code) continue;
 
-                // Robust matching: Match full code or code without suffix
-                const incomingCode = feedbackData.code.trim();
-                const incomingCodeBase = incomingCode.split('.')[0];
+                // AGGRESSIVE FUZZY MATCHING
+                const incomingCode = feedbackData.code.trim().toUpperCase();
+                const incomingBase = incomingCode.split('.')[0]; // Handle suffix like .26
 
                 const projIdx = projects.findIndex((p: any) => {
-                    const pCode = (p.projectCode || '').trim();
-                    return pCode === incomingCode || pCode === incomingCodeBase || pCode.split('.')[0] === incomingCodeBase;
+                    const localCode = (p.projectCode || '').trim().toUpperCase();
+                    const localBase = localCode.split('.')[0];
+                    return localCode === incomingCode || localBase === incomingBase;
                 });
                 
                 if (projIdx > -1) {
                     const project = projects[projIdx];
-                    // Don't overwrite manually verified feedback unless explicitly updated
+                    // Always ingest if status is not verified
                     if (project.trackingData?.feedbackStatus !== 'verified') {
                         project.trackingData = {
                             ...(project.trackingData || {}),
@@ -160,22 +164,22 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
                         updated = true;
                         if (onNewFeedback) onNewFeedback(project.projectCode);
                     }
-                    // Delete processed file from Drive to clean the inbox
+                    // Crucial: Delete the file from Drive so it doesn't double-process later
                     await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, { method: 'DELETE', headers: getDriveHeaders(token) });
                 }
             } catch (e) {
-                console.error(`Inbox error processing file ${file.name}:`, e);
+                console.error(`Inbox item error:`, e);
             }
         }
 
         if (updated) {
             saveData('projects', projects);
-            // CRITICAL: Push updated projects back to cloud immediately so other managers see the feedback
+            // Push to master cloud immediately so other team members see the "NEW" feedback badge
             await pushToCloud();
         }
         return { success: true, count: processedCount };
     } catch (err) {
-        console.error("Inbox sync failed:", err);
+        console.error("Inbox check failed:", err);
         return { success: false, count: 0 };
     }
 };
@@ -208,15 +212,14 @@ export const syncWithCloud = async (providedToken?: string, onNewFeedback?: (cod
 
         updateSystemMeta({ driveFileId: foundFile.id, driveAccessToken: token, lastCloudSync: new Date().toISOString() });
         
-        // Trigger Inbox Check after master sync
+        // Also sync the inbox immediately
         await syncInboxFeedback(onNewFeedback);
         
-        // Trigger Event for UI refresh
         window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key: 'all' } }));
 
-        return { success: true, message: "Sync Complete." };
+        return { success: true, message: "Vault Synchronized." };
     } catch (err: any) {
-        return { success: false, message: "Sync Error." };
+        return { success: false, message: "Cloud Sync Error." };
     }
 };
 
@@ -246,7 +249,7 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         });
 
         updateSystemMeta({ lastCloudSync: new Date().toISOString() });
-        return { success: true, message: "Vault Updated." };
+        return { success: true, message: "Cloud Push Success." };
     } catch (err: any) {
         return { success: false, message: "Push Error." };
     }
