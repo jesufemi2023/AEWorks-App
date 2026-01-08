@@ -96,7 +96,7 @@ export const updateSystemMeta = (meta: Partial<SystemMeta>): void => {
     localStorage.setItem('system_meta', JSON.stringify([{ ...current, ...meta }]));
 };
 
-export const DB_KEYS = ['clients', 'contacts', 'centres', 'framingMaterials', 'finishMaterials', 'projects', 'users', 'payrollRuns', 'defaultCostingVariables', 'productionLogs', 'locationExpenses'];
+export const DB_KEYS = ['clients', 'contacts', 'centres', 'framingMaterials', 'finishMaterials', 'projects', 'users', 'payrollRuns', 'defaultCostingVariables', 'productionLogs', 'locationExpenses', 'unassignedFeedback'];
 const MASTER_FILE_NAME = "AEWORKS_MASTER_VAULT.json";
 const INBOX_FOLDER_NAME = "AEWORKS_INBOX";
 
@@ -111,15 +111,11 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
     if (!token) return { success: false, count: 0 };
 
     try {
-        console.log("Checking AEWORKS_INBOX for new customer signatures...");
         const folderQuery = encodeURIComponent(`name='${INBOX_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
         const folderRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}`, { headers: getDriveHeaders(token) });
         const folderData = await folderRes.json();
         
-        if (!folderData.files || folderData.files.length === 0) {
-            console.warn("Folder AEWORKS_INBOX not found on Drive.");
-            return { success: true, count: 0 };
-        }
+        if (!folderData.files || folderData.files.length === 0) return { success: true, count: 0 };
         const folderId = folderData.files[0].id;
 
         const filesQuery = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
@@ -131,7 +127,11 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
 
         let processedCount = 0;
         const projects = getData<any>('projects');
-        let updated = false;
+        const unassigned = getData<any>('unassignedFeedback');
+        let projectsUpdated = false;
+        let unassignedUpdated = false;
+
+        const normalize = (s: string) => s.replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
         for (const file of files) {
             try {
@@ -140,46 +140,51 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
 
                 if (!feedbackData.code) continue;
 
-                // AGGRESSIVE FUZZY MATCHING
-                const incomingCode = feedbackData.code.trim().toUpperCase();
-                const incomingBase = incomingCode.split('.')[0]; // Handle suffix like .26
+                const incomingNormal = normalize(feedbackData.code);
+                const incomingBase = normalize(feedbackData.code.split('.')[0]);
 
                 const projIdx = projects.findIndex((p: any) => {
-                    const localCode = (p.projectCode || '').trim().toUpperCase();
-                    const localBase = localCode.split('.')[0];
-                    return localCode === incomingCode || localBase === incomingBase;
+                    const localNormal = normalize(p.projectCode || '');
+                    const localBase = normalize((p.projectCode || '').split('.')[0]);
+                    return localNormal === incomingNormal || localBase === incomingBase;
                 });
                 
                 if (projIdx > -1) {
                     const project = projects[projIdx];
-                    // Always ingest if status is not verified
-                    if (project.trackingData?.feedbackStatus !== 'verified') {
-                        project.trackingData = {
-                            ...(project.trackingData || {}),
-                            customerFeedback: feedbackData.feedback,
-                            feedbackStatus: 'received'
-                        };
-                        project.updatedAt = new Date().toISOString();
-                        processedCount++;
-                        updated = true;
-                        if (onNewFeedback) onNewFeedback(project.projectCode);
-                    }
-                    // Crucial: Delete the file from Drive so it doesn't double-process later
-                    await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, { method: 'DELETE', headers: getDriveHeaders(token) });
+                    project.trackingData = {
+                        ...(project.trackingData || {}),
+                        customerFeedback: feedbackData.feedback,
+                        feedbackStatus: 'received'
+                    };
+                    project.updatedAt = new Date().toISOString();
+                    projectsUpdated = true;
+                    if (onNewFeedback) onNewFeedback(project.projectCode);
+                } else {
+                    // ORPHAN PROTECTION: Save to unassigned list
+                    unassigned.push({
+                        id: generateId(),
+                        originalCode: feedbackData.code,
+                        feedback: feedbackData.feedback,
+                        receivedAt: new Date().toISOString()
+                    });
+                    unassignedUpdated = true;
                 }
+
+                // ALWAYS DELETE FROM DRIVE if we successfully parsed the JSON
+                await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, { method: 'DELETE', headers: getDriveHeaders(token) });
+                processedCount++;
             } catch (e) {
-                console.error(`Inbox item error:`, e);
+                console.error(`Inbox file processing failed:`, e);
             }
         }
 
-        if (updated) {
-            saveData('projects', projects);
-            // Push to master cloud immediately so other team members see the "NEW" feedback badge
-            await pushToCloud();
-        }
+        if (projectsUpdated) saveData('projects', projects);
+        if (unassignedUpdated) saveData('unassignedFeedback', unassigned);
+        
+        if (projectsUpdated || unassignedUpdated) await pushToCloud();
+        
         return { success: true, count: processedCount };
     } catch (err) {
-        console.error("Inbox check failed:", err);
         return { success: false, count: 0 };
     }
 };
@@ -191,13 +196,13 @@ export const syncWithCloud = async (providedToken?: string, onNewFeedback?: (cod
 
     try {
         const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
-        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name, modifiedTime)`, { headers: getDriveHeaders(token) });
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`, { headers: getDriveHeaders(token) });
         const searchData = await searchRes.json();
         const foundFile = (searchData.files || [])[0];
 
         if (!foundFile) {
             await pushToCloud();
-            return { success: true, message: "New Vault Established." };
+            return { success: true, message: "Vault Established." };
         }
 
         const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${foundFile.id}?alt=media`, { headers: getDriveHeaders(token) });
@@ -211,15 +216,11 @@ export const syncWithCloud = async (providedToken?: string, onNewFeedback?: (cod
         });
 
         updateSystemMeta({ driveFileId: foundFile.id, driveAccessToken: token, lastCloudSync: new Date().toISOString() });
-        
-        // Also sync the inbox immediately
         await syncInboxFeedback(onNewFeedback);
-        
         window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key: 'all' } }));
-
-        return { success: true, message: "Vault Synchronized." };
+        return { success: true, message: "Synchronized." };
     } catch (err: any) {
-        return { success: false, message: "Cloud Sync Error." };
+        return { success: false, message: "Connection Error." };
     }
 };
 
@@ -231,7 +232,6 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
     try {
         const fullDB: any = { _meta: { lastPush: new Date().toISOString() } };
         DB_KEYS.forEach(key => fullDB[key] = getData(key));
-        
         const metadata = { name: MASTER_FILE_NAME, mimeType: 'application/json' };
         let fileId = meta.driveFileId;
 
@@ -249,7 +249,7 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         });
 
         updateSystemMeta({ lastCloudSync: new Date().toISOString() });
-        return { success: true, message: "Cloud Push Success." };
+        return { success: true, message: "Push Success." };
     } catch (err: any) {
         return { success: false, message: "Push Error." };
     }
