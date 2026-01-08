@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useAppContext } from '../../hooks/useAppContext';
 import Icon from '../ui/Icon';
 import * as db from '../../services/db';
@@ -29,7 +29,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
     const profitChartRef = useRef<CanvasRenderingContext2D | null>(null);
     const chartInstances = useRef<any[]>([]);
 
-    const refreshDashboardData = () => {
+    const refreshDashboardData = useCallback(() => {
         const projects = db.getData<Project>('projects');
         const expenses = db.getData<LocationExpense>('locationExpenses');
         const framing = db.getData<FramingMaterial>('framingMaterials');
@@ -75,7 +75,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
 
         setRecentProjects([...projects].sort((a,b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()).slice(0, 4));
         return { labels, revenueData, burnData };
-    };
+    }, []);
 
     const handleManualSync = async () => {
         if (!meta.driveAccessToken) {
@@ -95,6 +95,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
 
     useEffect(() => {
         const { labels, revenueData, burnData } = refreshDashboardData();
+
+        // Listen for database updates from background sync
+        window.addEventListener('aeworks_db_update', refreshDashboardData);
 
         if (document.getElementById('profitChart')) {
             const ctx = (document.getElementById('profitChart') as HTMLCanvasElement).getContext('2d');
@@ -118,10 +121,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
         }
 
         return () => {
+            window.removeEventListener('aeworks_db_update', refreshDashboardData);
             chartInstances.current.forEach(c => c.destroy());
             chartInstances.current = [];
         };
-    }, []);
+    }, [refreshDashboardData]);
 
     const StatCard = ({ title, value, icon, color, subtitle, trend }: any) => (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-xl transition-all group">

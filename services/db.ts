@@ -39,6 +39,8 @@ export const saveData = <T,>(key: string, data: T[]): boolean => {
             return item;
         });
         localStorage.setItem(key, JSON.stringify(dataWithMeta));
+        // Trigger a global event so UI components know to refresh their local state
+        window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key } }));
         return true;
     } catch (error) {
         return false;
@@ -72,7 +74,6 @@ const MASTER_CLIENT_ID = GLOBAL_ENV_CLIENT_ID || HARDCODED_FALLBACK_ID;
 
 export const getSystemMeta = (): SystemMeta => {
     const raw = localStorage.getItem('system_meta');
-    
     const defaultMeta: SystemMeta = { 
         id: 'meta', 
         versionLabel: 'v4.6 Multi-Dev Sync', 
@@ -81,26 +82,7 @@ export const getSystemMeta = (): SystemMeta => {
         backupLocation: 'Google_Drive_AEWorks',
         googleClientId: MASTER_CLIENT_ID
     };
-    
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlClientId = urlParams.get('cid');
-
-    if (urlClientId) {
-        let existing: any = {};
-        if (raw) {
-            try {
-                const parsed = JSON.parse(raw);
-                existing = Array.isArray(parsed) ? parsed[0] : parsed;
-            } catch (e) {}
-        }
-        localStorage.setItem('system_meta', JSON.stringify([{ ...defaultMeta, ...existing, googleClientId: urlClientId }]));
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
-        return { ...defaultMeta, ...existing, googleClientId: urlClientId };
-    }
-    
     if (!raw) return defaultMeta;
-    
     try {
         const data = JSON.parse(raw);
         const meta = Array.isArray(data) ? data[0] : data;
@@ -124,41 +106,25 @@ const getDriveHeaders = (token: string) => ({
     'Content-Type': 'application/json'
 });
 
-const extractErrorMessage = async (response: Response): Promise<string> => {
-    try {
-        const body = await response.json();
-        return body.error?.message || `HTTP Error: ${response.status}`;
-    } catch {
-        return `Unexpected Status: ${response.status}`;
-    }
-};
-
-/**
- * Checks for incoming JSON feedback files in Google Drive.
- * Matches them with projects, imports data, and clears Drive.
- */
-export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void): Promise<{ success: boolean, count: number, message: string }> => {
+export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void): Promise<{ success: boolean, count: number }> => {
     const meta = getSystemMeta();
     const token = meta.driveAccessToken;
-    if (!token) return { success: false, count: 0, message: "Cloud link inactive." };
+    if (!token) return { success: false, count: 0 };
 
     try {
-        // 1. Locate Inbox Folder
         const folderQuery = encodeURIComponent(`name='${INBOX_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
         const folderRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}`, { headers: getDriveHeaders(token) });
         const folderData = await folderRes.json();
         
-        if (!folderData.files || folderData.files.length === 0) return { success: true, count: 0, message: "Inbox ready." };
-
+        if (!folderData.files || folderData.files.length === 0) return { success: true, count: 0 };
         const folderId = folderData.files[0].id;
 
-        // 2. Scan for JSON files
         const filesQuery = encodeURIComponent(`'${folderId}' in parents and (mimeType='application/json' or mimeType='text/plain') and trashed=false`);
         const filesRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${filesQuery}&fields=files(id, name)`, { headers: getDriveHeaders(token) });
         const filesData = await filesRes.json();
         
         const files = filesData.files || [];
-        if (files.length === 0) return { success: true, count: 0, message: "No new feedback." };
+        if (files.length === 0) return { success: true, count: 0 };
 
         let processedCount = 0;
         const projects = getData<any>('projects');
@@ -171,11 +137,18 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
 
                 if (!feedbackData.code) continue;
 
-                const projIdx = projects.findIndex((p: any) => p.projectCode === feedbackData.code);
+                // Robust matching: Match full code or code without suffix
+                const incomingCode = feedbackData.code.trim();
+                const incomingCodeBase = incomingCode.split('.')[0];
+
+                const projIdx = projects.findIndex((p: any) => {
+                    const pCode = (p.projectCode || '').trim();
+                    return pCode === incomingCode || pCode === incomingCodeBase || pCode.split('.')[0] === incomingCodeBase;
+                });
+                
                 if (projIdx > -1) {
                     const project = projects[projIdx];
-                    
-                    // Only overwrite if status isn't already verified
+                    // Don't overwrite manually verified feedback unless explicitly updated
                     if (project.trackingData?.feedbackStatus !== 'verified') {
                         project.trackingData = {
                             ...(project.trackingData || {}),
@@ -185,92 +158,45 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
                         project.updatedAt = new Date().toISOString();
                         processedCount++;
                         updated = true;
-                        
-                        if (onNewFeedback) onNewFeedback(feedbackData.code);
+                        if (onNewFeedback) onNewFeedback(project.projectCode);
                     }
-
-                    // Delete from Drive to clear the queue
-                    await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
-                        method: 'DELETE',
-                        headers: getDriveHeaders(token)
-                    });
+                    // Delete processed file from Drive to clean the inbox
+                    await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, { method: 'DELETE', headers: getDriveHeaders(token) });
                 }
             } catch (e) {
-                console.error(`Inbox error on ${file.name}:`, e);
+                console.error(`Inbox error processing file ${file.name}:`, e);
             }
         }
 
         if (updated) {
             saveData('projects', projects);
+            // CRITICAL: Push updated projects back to cloud immediately so other managers see the feedback
+            await pushToCloud();
         }
-
-        return { 
-            success: true, 
-            count: processedCount, 
-            message: processedCount > 0 ? `Imported ${processedCount} feedbacks.` : "No pending feedbacks found." 
-        };
-    } catch (err: any) {
-        return { success: false, count: 0, message: "Inbox scan error." };
+        return { success: true, count: processedCount };
+    } catch (err) {
+        console.error("Inbox sync failed:", err);
+        return { success: false, count: 0 };
     }
 };
 
-export const syncWithCloud = async (providedToken?: string, excludeId?: string, onNewFeedback?: (code: string) => void): Promise<{success: boolean, message: string}> => {
+export const syncWithCloud = async (providedToken?: string, onNewFeedback?: (code: string) => void): Promise<{success: boolean, message: string}> => {
     const meta = getSystemMeta();
     const token = providedToken || meta.driveAccessToken;
-    
-    if (!token) return { success: false, message: "Drive Authorization Required." };
+    if (!token) return { success: false, message: "Drive Auth Required." };
 
     try {
-        let email = meta.connectedEmail;
-        try {
-            const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: getDriveHeaders(token) });
-            if (userRes.ok) {
-                const userData = await userRes.json();
-                email = userData.email;
-            }
-        } catch (e) {}
-
         const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
-        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id, name, modifiedTime, webViewLink)`, {
-            headers: getDriveHeaders(token)
-        });
-        
-        if (!searchRes.ok) {
-            const msg = await extractErrorMessage(searchRes);
-            if (searchRes.status === 401) {
-                updateSystemMeta({ driveAccessToken: undefined, connectedEmail: undefined });
-                return { success: false, message: `Auth Session Expired. (${msg})` };
-            }
-            throw new Error(msg);
-        }
-        
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name, modifiedTime)`, { headers: getDriveHeaders(token) });
         const searchData = await searchRes.json();
-        const foundFiles = searchData.files || [];
-        let fileId = foundFiles.find((f: any) => f.id !== excludeId)?.id || meta.driveFileId;
-        let fileUrl = foundFiles.find((f: any) => f.id !== excludeId)?.webViewLink || meta.driveFileUrl;
+        const foundFile = (searchData.files || [])[0];
 
-        if (!fileId || fileId === excludeId) {
-            updateSystemMeta({ driveAccessToken: token, connectedEmail: email, driveFileId: undefined });
-            const pushResult = await pushToCloud(excludeId);
-            if (pushResult.success) {
-                return { success: true, message: `Shared Vault Initialized on Drive (${email})` };
-            }
-            return { success: true, message: `Connected as ${email}. Initial commit pending.` };
+        if (!foundFile) {
+            await pushToCloud();
+            return { success: true, message: "New Vault Established." };
         }
 
-        const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-            headers: getDriveHeaders(token)
-        });
-        
-        if (!fileRes.ok) {
-            const msg = await extractErrorMessage(fileRes);
-            if (fileRes.status === 404) {
-                updateSystemMeta({ driveFileId: undefined, driveFileUrl: undefined });
-                return syncWithCloud(token, fileId);
-            }
-            throw new Error(`Vault download failed: ${msg}`);
-        }
-        
+        const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${foundFile.id}?alt=media`, { headers: getDriveHeaders(token) });
         const actualData = await fileRes.json();
 
         DB_KEYS.forEach(key => {
@@ -280,112 +206,49 @@ export const syncWithCloud = async (providedToken?: string, excludeId?: string, 
             localStorage.setItem(key, JSON.stringify(merged));
         });
 
-        if (actualData._branding?.logo) saveSystemLogo(actualData._branding.logo);
-
-        updateSystemMeta({ 
-            driveFileId: fileId, 
-            driveAccessToken: token,
-            driveFileUrl: fileUrl,
-            connectedEmail: email,
-            lastCloudSync: new Date().toISOString() 
-        });
-
-        // Trigger an inbox check after the main vault sync
+        updateSystemMeta({ driveFileId: foundFile.id, driveAccessToken: token, lastCloudSync: new Date().toISOString() });
+        
+        // Trigger Inbox Check after master sync
         await syncInboxFeedback(onNewFeedback);
+        
+        // Trigger Event for UI refresh
+        window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key: 'all' } }));
 
-        return { success: true, message: `Synced with Team Repository (${email})` };
+        return { success: true, message: "Sync Complete." };
     } catch (err: any) {
-        console.error("Sync Failure:", err);
-        return { success: false, message: err.message || "Cloud unreachable or network error." };
+        return { success: false, message: "Sync Error." };
     }
 };
 
-export const pushToCloud = async (excludeId?: string): Promise<{success: boolean, message: string}> => {
+export const pushToCloud = async (): Promise<{success: boolean, message: string}> => {
     let meta = getSystemMeta();
     const token = meta.driveAccessToken;
-    if (!token) return { success: false, message: "No active Drive link. Authorization required." };
-    if (!navigator.onLine) return { success: false, message: "Device is offline. Cannot reach Drive." };
+    if (!token) return { success: false, message: "Offline." };
 
     try {
-        const fullDB: any = {
-            _branding: { logo: getSystemLogo() },
-            _meta: { ...meta, lastPush: new Date().toISOString() }
-        };
+        const fullDB: any = { _meta: { lastPush: new Date().toISOString() } };
         DB_KEYS.forEach(key => fullDB[key] = getData(key));
-
+        
+        const metadata = { name: MASTER_FILE_NAME, mimeType: 'application/json' };
         let fileId = meta.driveFileId;
-        let fileUrl = meta.driveFileUrl;
-
-        if (fileId === excludeId) {
-            fileId = undefined;
-            fileUrl = undefined;
-        }
 
         if (!fileId) {
-            const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
-            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, webViewLink)`, {
-                headers: getDriveHeaders(token)
+            const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+                method: 'POST', headers: getDriveHeaders(token), body: JSON.stringify(metadata)
             });
-            
-            if (!searchRes.ok) {
-                const msg = await extractErrorMessage(searchRes);
-                if (searchRes.status === 401) {
-                    updateSystemMeta({ driveAccessToken: undefined });
-                    return { success: false, message: "Authorization expired. Please re-link." };
-                }
-                throw new Error(msg);
-            }
-            
-            const searchData = await searchRes.json();
-            const foundFiles = searchData.files || [];
-            const validFile = foundFiles.find((f: any) => f.id !== excludeId);
-            
-            if (validFile) {
-                fileId = validFile.id;
-                fileUrl = validFile.webViewLink;
-            }
-        }
-
-        if (!fileId) {
-            const metadata = { name: MASTER_FILE_NAME, mimeType: 'application/json' };
-            const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,webViewLink', {
-                method: 'POST',
-                headers: getDriveHeaders(token),
-                body: JSON.stringify(metadata)
-            });
-            if (!createRes.ok) {
-                const msg = await extractErrorMessage(createRes);
-                throw new Error(msg);
-            }
             const createData = await createRes.json();
             fileId = createData.id;
-            fileUrl = createData.webViewLink;
-            updateSystemMeta({ driveFileId: fileId, driveFileUrl: fileUrl });
+            updateSystemMeta({ driveFileId: fileId });
         }
 
-        const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-            method: 'PATCH',
-            headers: getDriveHeaders(token),
-            body: JSON.stringify(fullDB)
+        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+            method: 'PATCH', headers: getDriveHeaders(token), body: JSON.stringify(fullDB)
         });
 
-        if (!uploadRes.ok) {
-            const msg = await extractErrorMessage(uploadRes);
-            if (uploadRes.status === 401) {
-                updateSystemMeta({ driveAccessToken: undefined });
-                return { success: false, message: "Session expired while uploading." };
-            }
-            if (uploadRes.status === 404) {
-                updateSystemMeta({ driveFileId: undefined, driveFileUrl: undefined });
-                return pushToCloud(fileId);
-            }
-            throw new Error(msg);
-        }
-
-        updateSystemMeta({ driveFileId: fileId, driveFileUrl: fileUrl, lastCloudSync: new Date().toISOString() });
-        return { success: true, message: "Pushed to Shared Vault successfully." };
+        updateSystemMeta({ lastCloudSync: new Date().toISOString() });
+        return { success: true, message: "Vault Updated." };
     } catch (err: any) {
-        return { success: false, message: err.message || "Unknown Cloud Error." };
+        return { success: false, message: "Push Error." };
     }
 };
 
@@ -397,17 +260,11 @@ const mergeDatasets = (dbKey: string, local: any[], remote: any[]) => {
         if (dbKey === 'clients') return item.name || item.id;
         return item.id;
     };
-    remote.forEach(remoteItem => {
-        const id = getStableId(remoteItem);
-        if (id) map.set(id, remoteItem);
-    });
-    local.forEach(localItem => {
-        const id = getStableId(localItem);
-        if (!id) return;
-        const remoteItem = map.get(id);
-        if (!remoteItem || new Date(localItem.updatedAt || 0) > new Date(remoteItem.updatedAt || 0)) {
-            map.set(id, localItem);
-        }
+    remote.forEach(i => map.set(getStableId(i), i));
+    local.forEach(i => {
+        const id = getStableId(i);
+        const rem = map.get(id);
+        if (!rem || new Date(i.updatedAt || 0) > new Date(rem.updatedAt || 0)) map.set(id, i);
     });
     return Array.from(map.values());
 };

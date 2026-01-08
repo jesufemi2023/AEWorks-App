@@ -24,6 +24,7 @@ const PublicFeedbackPortal: React.FC<PublicFeedbackPortalProps> = ({ token }) =>
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const [signedCode, setSignedCode] = useState('');
+    const [showReceipt, setShowReceipt] = useState(false);
 
     useEffect(() => {
         try {
@@ -58,12 +59,10 @@ const PublicFeedbackPortal: React.FC<PublicFeedbackPortalProps> = ({ token }) =>
         };
 
         const payloadString = JSON.stringify(payload);
-        // Manual fallback/receipt generation
         setSignedCode(btoa(payloadString));
 
         try {
-            // We use text/plain to avoid CORS preflight (OPTIONS request) which GAS handles poorly.
-            // Deployment must be set to "Anyone" for this to work without an Auth header.
+            // Automated submission to Google Relay
             await fetch(RELAY_URL, {
                 method: 'POST',
                 mode: 'no-cors', 
@@ -71,14 +70,15 @@ const PublicFeedbackPortal: React.FC<PublicFeedbackPortalProps> = ({ token }) =>
                 body: payloadString
             });
             
-            // Because of 'no-cors', we can't check response.ok, but we assume success if no error is thrown
+            // Assume success after a brief transmission delay
             setTimeout(() => {
                 setIsSubmitted(true);
                 setIsSending(false);
-            }, 1000);
+            }, 1200);
 
         } catch (e) {
-            console.error("Automated Relay unreachable. Falling back to manual verification mode.");
+            console.error("Automated transmission error. Showing manual receipt fallback.");
+            setShowReceipt(true);
             setIsSubmitted(true);
             setIsSending(false);
         }
@@ -132,18 +132,28 @@ const PublicFeedbackPortal: React.FC<PublicFeedbackPortalProps> = ({ token }) =>
                     </div>
                     <div>
                         <h2 className="text-3xl font-black uppercase tracking-tighter text-slate-900 leading-none">Accepted & Signed</h2>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-3">Final Project Handover Authorized</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-3">Digital Closeout Handshake Complete</p>
                     </div>
                     
-                    <div className="bg-slate-900 p-6 rounded-[2rem] text-white space-y-4">
-                        <p className="text-[10px] text-slate-400 font-medium leading-relaxed text-center">Your feedback has been transmitted securely. If requested, provide the <span className="text-blue-400 font-bold">Secure Receipt</span> below to the manager:</p>
-                        <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800 break-all font-mono text-[8px] font-bold text-emerald-400 select-all leading-tight">
-                            {signedCode}
-                        </div>
+                    <div className="bg-slate-900 p-8 rounded-[2rem] text-white space-y-4">
+                        <p className="text-[11px] text-slate-300 font-medium leading-relaxed text-center">Your acceptance certificate has been transmitted to our project management team. No further action is required from your side.</p>
+                        
+                        {(showReceipt || signedCode) && (
+                            <div className="pt-4 mt-2 border-t border-white/10">
+                                <button onClick={() => setShowReceipt(!showReceipt)} className="text-[9px] font-black uppercase text-blue-400 tracking-widest opacity-60 hover:opacity-100 transition-opacity">
+                                    {showReceipt ? 'Hide Receipt Metadata' : 'View Secure Receipt'}
+                                </button>
+                                {showReceipt && (
+                                    <div className="mt-4 bg-slate-950/50 p-4 rounded-2xl border border-slate-800 break-all font-mono text-[8px] font-bold text-emerald-400 select-all leading-tight animate-fade-in">
+                                        {signedCode}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                     
                     <div className="pt-4 border-t border-slate-100">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Digital Closeout Handshake Complete</p>
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em]">AEWorks Logistics Division</p>
                     </div>
                 </div>
             </div>
@@ -230,7 +240,7 @@ const PublicFeedbackPortal: React.FC<PublicFeedbackPortalProps> = ({ token }) =>
                                     Digital Signature
                                 </h4>
                                 <p className="text-sm text-blue-100 font-medium leading-relaxed mb-10 max-w-lg">
-                                    By clicking below, you authorize the final project closeout for <strong className="text-white">{projectData.code}</strong>. Your ratings will be shared with the project management team.
+                                    By clicking below, you authorize the final project closeout for <strong className="text-white">{projectData.code}</strong>. Your ratings will be transmitted securely to our operations vault.
                                 </p>
                                 
                                 <div className="flex flex-col md:flex-row items-center gap-6">

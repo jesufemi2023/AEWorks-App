@@ -43,7 +43,8 @@ const App: React.FC = () => {
             if (navigator.onLine && meta.driveAccessToken) {
                 console.log("Auto Polling: Checking Cloud Vault & Inbox...");
                 try {
-                    await db.syncWithCloud(undefined, undefined, (code) => {
+                    // Corrected the number of arguments passed to syncWithCloud (was 3, should be 2)
+                    await db.syncWithCloud(undefined, (code) => {
                         showNotification(`New Customer Feedback received for ${code}!`, 'warning');
                     });
                 } catch (e) {}
