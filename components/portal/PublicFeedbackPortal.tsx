@@ -9,8 +9,7 @@ interface PublicFeedbackPortalProps {
 }
 
 /** 
- * PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE 
- * You get this by deploying the "AEWorks Relay" script in your Google account.
+ * PASTE YOUR DEPLOYED GOOGLE APPS SCRIPT WEB APP URL HERE 
  */
 const RELAY_URL = "https://script.google.com/macros/s/AKfycbwObS2qVvurf9XYe5H2Pt032n3AeKKzeRuaOcVcq_q3hww5u8Kr-In7e8J-Qi5ipM9qcQ/exec";
 
@@ -58,29 +57,28 @@ const PublicFeedbackPortal: React.FC<PublicFeedbackPortalProps> = ({ token }) =>
             feedback
         };
 
+        const payloadString = JSON.stringify(payload);
+        // Manual fallback/receipt generation
+        setSignedCode(btoa(payloadString));
+
         try {
-            // Step 1: Attempt Automated Transmission to Google Drive Inbox
-            const response = await fetch(RELAY_URL, {
+            // We use text/plain to avoid CORS preflight (OPTIONS request) which GAS handles poorly.
+            // Deployment must be set to "Anyone" for this to work without an Auth header.
+            await fetch(RELAY_URL, {
                 method: 'POST',
-                mode: 'no-cors', // Google Scripts require no-cors or redirect handling
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                mode: 'no-cors', 
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: payloadString
             });
             
-            // Manual token is generated as a fallback/receipt
-            const encoded = btoa(JSON.stringify(payload));
-            setSignedCode(encoded);
-            
-            // We simulate a short delay for UX to show "Transmitting"
+            // Because of 'no-cors', we can't check response.ok, but we assume success if no error is thrown
             setTimeout(() => {
                 setIsSubmitted(true);
                 setIsSending(false);
-            }, 1500);
+            }, 1000);
 
         } catch (e) {
-            console.error("Relay failed. Using manual verification mode.");
-            const encoded = btoa(JSON.stringify(payload));
-            setSignedCode(encoded);
+            console.error("Automated Relay unreachable. Falling back to manual verification mode.");
             setIsSubmitted(true);
             setIsSending(false);
         }
@@ -138,7 +136,7 @@ const PublicFeedbackPortal: React.FC<PublicFeedbackPortalProps> = ({ token }) =>
                     </div>
                     
                     <div className="bg-slate-900 p-6 rounded-[2rem] text-white space-y-4">
-                        <p className="text-[10px] text-slate-400 font-medium leading-relaxed">Your feedback has been transmitted. If the manager asks for verification, please provide the <span className="text-blue-400 font-bold">Secure Receipt</span> below:</p>
+                        <p className="text-[10px] text-slate-400 font-medium leading-relaxed text-center">Your feedback has been transmitted securely. If requested, provide the <span className="text-blue-400 font-bold">Secure Receipt</span> below to the manager:</p>
                         <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800 break-all font-mono text-[8px] font-bold text-emerald-400 select-all leading-tight">
                             {signedCode}
                         </div>

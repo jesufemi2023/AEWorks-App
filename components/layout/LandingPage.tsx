@@ -18,7 +18,7 @@ interface LandingPageProps {
 const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
     const { currentUser, showNotification } = useAppContext();
     const [stats, setStats] = useState({
-        pipelineValue: 0, activeJobs: 0, monthlyBurn: 0, efficiencyIndex: 0
+        pipelineValue: 0, activeJobs: 0, monthlyBurn: 0, efficiencyIndex: 0, pendingFeedback: 0
     });
     const [recentProjects, setRecentProjects] = useState<Project[]>([]);
     const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -63,12 +63,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
 
         const totalPipeline = projects.reduce((acc, p) => acc + calculateProjectCost(p, framing, finish).salesPrice, 0);
         const activeCount = projects.filter(p => parseInt(p.projectStatus) > 0 && parseInt(p.projectStatus) < 100).length;
+        const feedbackCount = projects.filter(p => p.trackingData?.feedbackStatus === 'received').length;
 
         setStats({
             pipelineValue: totalPipeline,
             activeJobs: activeCount,
             monthlyBurn: burnData[5],
-            efficiencyIndex: (revenueData[5] > 0) ? (revenueData[5] / (burnData[5] || 1)) : 1.2
+            efficiencyIndex: (revenueData[5] > 0) ? (revenueData[5] / (burnData[5] || 1)) : 1.2,
+            pendingFeedback: feedbackCount
         });
 
         setRecentProjects([...projects].sort((a,b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()).slice(0, 4));
@@ -283,7 +285,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLogout }) => {
                         <h3 className="font-black text-xl text-slate-900 uppercase tracking-tighter">Payroll</h3>
                         <p className="text-xs text-slate-400 font-bold mt-2 uppercase tracking-tighter">Personnel Disbursals</p>
                     </div>
-                    <div onClick={() => onNavigate('feedback-journal')} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 hover:shadow-2xl hover:-translate-y-2 transition-all cursor-pointer group">
+                    <div onClick={() => onNavigate('feedback-journal')} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 hover:shadow-2xl hover:-translate-y-2 transition-all cursor-pointer group relative">
+                        {stats.pendingFeedback > 0 && (
+                            <div className="absolute top-6 right-6 bg-amber-500 text-slate-900 text-[10px] font-black px-2 py-1 rounded-full animate-bounce shadow-lg shadow-amber-500/20">
+                                {stats.pendingFeedback} NEW
+                            </div>
+                        )}
                         <div className="w-16 h-16 rounded-[1.5rem] bg-indigo-50 text-indigo-600 flex items-center justify-center text-3xl mb-6 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
                             <Icon name="fas fa-comments" />
                         </div>
