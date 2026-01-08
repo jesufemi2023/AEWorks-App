@@ -134,33 +134,31 @@ const extractErrorMessage = async (response: Response): Promise<string> => {
 };
 
 /**
- * Searches for feedback files in the AEWORKS_INBOX folder on Google Drive
- * and integrates them into the local projects database.
+ * Checks for incoming JSON feedback files in Google Drive.
+ * Matches them with projects, imports data, and clears Drive.
  */
-export const syncInboxFeedback = async (): Promise<{ success: boolean, count: number, message: string }> => {
+export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void): Promise<{ success: boolean, count: number, message: string }> => {
     const meta = getSystemMeta();
     const token = meta.driveAccessToken;
     if (!token) return { success: false, count: 0, message: "Cloud link inactive." };
 
     try {
-        // 1. Find the Inbox Folder
+        // 1. Locate Inbox Folder
         const folderQuery = encodeURIComponent(`name='${INBOX_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
         const folderRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}`, { headers: getDriveHeaders(token) });
         const folderData = await folderRes.json();
         
-        if (!folderData.files || folderData.files.length === 0) {
-            return { success: true, count: 0, message: "Inbox folder not found or empty." };
-        }
+        if (!folderData.files || folderData.files.length === 0) return { success: true, count: 0, message: "Inbox ready." };
 
         const folderId = folderData.files[0].id;
 
-        // 2. List JSON files in that folder
-        const filesQuery = encodeURIComponent(`'${folderId}' in parents and mimeType='application/json' and trashed=false`);
+        // 2. Scan for JSON files
+        const filesQuery = encodeURIComponent(`'${folderId}' in parents and (mimeType='application/json' or mimeType='text/plain') and trashed=false`);
         const filesRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${filesQuery}&fields=files(id, name)`, { headers: getDriveHeaders(token) });
         const filesData = await filesRes.json();
         
         const files = filesData.files || [];
-        if (files.length === 0) return { success: true, count: 0, message: "No new feedback in inbox." };
+        if (files.length === 0) return { success: true, count: 0, message: "No new feedback." };
 
         let processedCount = 0;
         const projects = getData<any>('projects');
@@ -168,32 +166,37 @@ export const syncInboxFeedback = async (): Promise<{ success: boolean, count: nu
 
         for (const file of files) {
             try {
-                // Download file content
                 const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: getDriveHeaders(token) });
                 const feedbackData = await contentRes.json();
 
-                // Match with project
+                if (!feedbackData.code) continue;
+
                 const projIdx = projects.findIndex((p: any) => p.projectCode === feedbackData.code);
                 if (projIdx > -1) {
                     const project = projects[projIdx];
-                    // Update project tracking data
-                    project.trackingData = {
-                        ...(project.trackingData || {}),
-                        customerFeedback: feedbackData.feedback,
-                        feedbackStatus: 'received' // Received but unverified
-                    };
-                    project.updatedAt = new Date().toISOString();
-                    processedCount++;
-                    updated = true;
+                    
+                    // Only overwrite if status isn't already verified
+                    if (project.trackingData?.feedbackStatus !== 'verified') {
+                        project.trackingData = {
+                            ...(project.trackingData || {}),
+                            customerFeedback: feedbackData.feedback,
+                            feedbackStatus: 'received'
+                        };
+                        project.updatedAt = new Date().toISOString();
+                        processedCount++;
+                        updated = true;
+                        
+                        if (onNewFeedback) onNewFeedback(feedbackData.code);
+                    }
 
-                    // Delete file from Drive after successful import to clear the inbox
+                    // Delete from Drive to clear the queue
                     await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
                         method: 'DELETE',
                         headers: getDriveHeaders(token)
                     });
                 }
             } catch (e) {
-                console.error(`Error processing feedback file ${file.name}:`, e);
+                console.error(`Inbox error on ${file.name}:`, e);
             }
         }
 
@@ -204,14 +207,14 @@ export const syncInboxFeedback = async (): Promise<{ success: boolean, count: nu
         return { 
             success: true, 
             count: processedCount, 
-            message: processedCount > 0 ? `Imported ${processedCount} feedback records.` : "No matching projects for feedback in inbox." 
+            message: processedCount > 0 ? `Imported ${processedCount} feedbacks.` : "No pending feedbacks found." 
         };
     } catch (err: any) {
-        return { success: false, count: 0, message: err.message || "Inbox sync failed." };
+        return { success: false, count: 0, message: "Inbox scan error." };
     }
 };
 
-export const syncWithCloud = async (providedToken?: string, excludeId?: string): Promise<{success: boolean, message: string}> => {
+export const syncWithCloud = async (providedToken?: string, excludeId?: string, onNewFeedback?: (code: string) => void): Promise<{success: boolean, message: string}> => {
     const meta = getSystemMeta();
     const token = providedToken || meta.driveAccessToken;
     
@@ -288,7 +291,7 @@ export const syncWithCloud = async (providedToken?: string, excludeId?: string):
         });
 
         // Trigger an inbox check after the main vault sync
-        await syncInboxFeedback();
+        await syncInboxFeedback(onNewFeedback);
 
         return { success: true, message: `Synced with Team Repository (${email})` };
     } catch (err: any) {

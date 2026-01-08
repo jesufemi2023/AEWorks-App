@@ -41,10 +41,11 @@ const App: React.FC = () => {
         const triggerSync = async () => {
             const meta = db.getSystemMeta();
             if (navigator.onLine && meta.driveAccessToken) {
-                console.log("Sync Triggered: Refreshing cloud data...");
+                console.log("Auto Polling: Checking Cloud Vault & Inbox...");
                 try {
-                    await db.syncWithCloud();
-                    // Feedback inbox sync is called inside syncWithCloud
+                    await db.syncWithCloud(undefined, undefined, (code) => {
+                        showNotification(`New Customer Feedback received for ${code}!`, 'warning');
+                    });
                 } catch (e) {}
             }
         };
@@ -97,7 +98,7 @@ const App: React.FC = () => {
                 try {
                     await db.syncWithCloud();
                 } catch (e) {
-                    console.warn("Background sync deferred.");
+                    console.warn("Initial sync deferred.");
                 }
             }
             
@@ -146,8 +147,8 @@ const App: React.FC = () => {
                         <i className="fas fa-circle-notch animate-spin text-5xl text-blue-500 relative z-10"></i>
                     </div>
                     <div className="text-center animate-pulse">
-                        <p className="font-black tracking-[0.4em] text-[10px] uppercase mb-1">Authenticating</p>
-                        <p className="text-[8px] text-slate-600 font-bold uppercase">Connecting Repository</p>
+                        <p className="font-black tracking-[0.4em] text-[10px] uppercase mb-1">Connecting</p>
+                        <p className="text-[8px] text-slate-600 font-bold uppercase">AEWorks Secure Vault</p>
                     </div>
                 </div>
             </div>
