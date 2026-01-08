@@ -31,13 +31,21 @@ const App: React.FC = () => {
     const [isInitialized, setIsInitialized] = useState(false);
     const [portalToken, setPortalToken] = useState<string | null>(null);
 
+    const showNotification = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 4000);
+    }, []);
+
     // Resilient Background Sync Logic
     useEffect(() => {
-        const triggerSync = () => {
+        const triggerSync = async () => {
             const meta = db.getSystemMeta();
             if (navigator.onLine && meta.driveAccessToken) {
                 console.log("Sync Triggered: Refreshing cloud data...");
-                db.syncWithCloud().catch(() => {});
+                try {
+                    await db.syncWithCloud();
+                    // Feedback inbox sync is called inside syncWithCloud
+                } catch (e) {}
             }
         };
 
@@ -50,7 +58,7 @@ const App: React.FC = () => {
         window.addEventListener('online', triggerSync);
         document.addEventListener('visibilitychange', handleVisibilityChange);
         
-        // Periodic background check (every 2 mins for collaboration)
+        // Periodic background check (every 2 mins for collaboration and feedback)
         const interval = setInterval(triggerSync, 120000);
 
         return () => {
@@ -58,7 +66,7 @@ const App: React.FC = () => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             clearInterval(interval);
         };
-    }, []);
+    }, [showNotification]);
 
     // Initialize Database
     useEffect(() => {
@@ -96,11 +104,6 @@ const App: React.FC = () => {
             setIsInitialized(true);
         };
         initDB();
-    }, []);
-
-    const showNotification = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'success') => {
-        setNotification({ message, type });
-        setTimeout(() => setNotification(null), 4000);
     }, []);
 
     const contextValue = useMemo(() => ({

@@ -42,6 +42,7 @@ export interface CustomerFeedback {
     comments: string;
     submittedAt: string;
     verifiedAt?: string;
+    verifiedBy?: string;
 }
 
 export interface WorkerEvaluation {
@@ -139,6 +140,7 @@ export interface ProjectTrackingData {
     closeoutNotes?: string;
     finalCloseoutDate?: string;
     customerFeedback?: CustomerFeedback;
+    feedbackStatus?: 'none' | 'requested' | 'received' | 'verified';
     workerEvaluations?: WorkerEvaluation[];
 }
 

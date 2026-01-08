@@ -115,8 +115,9 @@ export const updateSystemMeta = (meta: Partial<SystemMeta>): void => {
     localStorage.setItem('system_meta', JSON.stringify([{ ...current, ...meta }]));
 };
 
-export const DB_KEYS = ['clients', 'contacts', 'centres', 'framingMaterials', 'finishMaterials', 'projects', 'users', 'payrollRuns', 'defaultCostingVariables'];
+export const DB_KEYS = ['clients', 'contacts', 'centres', 'framingMaterials', 'finishMaterials', 'projects', 'users', 'payrollRuns', 'defaultCostingVariables', 'productionLogs', 'locationExpenses'];
 const MASTER_FILE_NAME = "AEWORKS_MASTER_VAULT.json";
+const INBOX_FOLDER_NAME = "AEWORKS_INBOX";
 
 const getDriveHeaders = (token: string) => ({
     'Authorization': `Bearer ${token}`,
@@ -129,6 +130,84 @@ const extractErrorMessage = async (response: Response): Promise<string> => {
         return body.error?.message || `HTTP Error: ${response.status}`;
     } catch {
         return `Unexpected Status: ${response.status}`;
+    }
+};
+
+/**
+ * Searches for feedback files in the AEWORKS_INBOX folder on Google Drive
+ * and integrates them into the local projects database.
+ */
+export const syncInboxFeedback = async (): Promise<{ success: boolean, count: number, message: string }> => {
+    const meta = getSystemMeta();
+    const token = meta.driveAccessToken;
+    if (!token) return { success: false, count: 0, message: "Cloud link inactive." };
+
+    try {
+        // 1. Find the Inbox Folder
+        const folderQuery = encodeURIComponent(`name='${INBOX_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+        const folderRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}`, { headers: getDriveHeaders(token) });
+        const folderData = await folderRes.json();
+        
+        if (!folderData.files || folderData.files.length === 0) {
+            return { success: true, count: 0, message: "Inbox folder not found or empty." };
+        }
+
+        const folderId = folderData.files[0].id;
+
+        // 2. List JSON files in that folder
+        const filesQuery = encodeURIComponent(`'${folderId}' in parents and mimeType='application/json' and trashed=false`);
+        const filesRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${filesQuery}&fields=files(id, name)`, { headers: getDriveHeaders(token) });
+        const filesData = await filesRes.json();
+        
+        const files = filesData.files || [];
+        if (files.length === 0) return { success: true, count: 0, message: "No new feedback in inbox." };
+
+        let processedCount = 0;
+        const projects = getData<any>('projects');
+        let updated = false;
+
+        for (const file of files) {
+            try {
+                // Download file content
+                const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: getDriveHeaders(token) });
+                const feedbackData = await contentRes.json();
+
+                // Match with project
+                const projIdx = projects.findIndex((p: any) => p.projectCode === feedbackData.code);
+                if (projIdx > -1) {
+                    const project = projects[projIdx];
+                    // Update project tracking data
+                    project.trackingData = {
+                        ...(project.trackingData || {}),
+                        customerFeedback: feedbackData.feedback,
+                        feedbackStatus: 'received' // Received but unverified
+                    };
+                    project.updatedAt = new Date().toISOString();
+                    processedCount++;
+                    updated = true;
+
+                    // Delete file from Drive after successful import to clear the inbox
+                    await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
+                        method: 'DELETE',
+                        headers: getDriveHeaders(token)
+                    });
+                }
+            } catch (e) {
+                console.error(`Error processing feedback file ${file.name}:`, e);
+            }
+        }
+
+        if (updated) {
+            saveData('projects', projects);
+        }
+
+        return { 
+            success: true, 
+            count: processedCount, 
+            message: processedCount > 0 ? `Imported ${processedCount} feedback records.` : "No matching projects for feedback in inbox." 
+        };
+    } catch (err: any) {
+        return { success: false, count: 0, message: err.message || "Inbox sync failed." };
     }
 };
 
@@ -207,6 +286,9 @@ export const syncWithCloud = async (providedToken?: string, excludeId?: string):
             connectedEmail: email,
             lastCloudSync: new Date().toISOString() 
         });
+
+        // Trigger an inbox check after the main vault sync
+        await syncInboxFeedback();
 
         return { success: true, message: `Synced with Team Repository (${email})` };
     } catch (err: any) {
