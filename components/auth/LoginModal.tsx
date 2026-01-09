@@ -81,7 +81,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin }) => {
 
             const client = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: config.googleClientId,
-                scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+                // UPGRADED SCOPE: Changed from drive.file to drive to ensure we can see files created by the Relay script
+                scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email',
                 callback: async (response: any) => {
                     if (response.error) {
                         setIsLoading(false);

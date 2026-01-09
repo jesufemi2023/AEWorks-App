@@ -64,7 +64,8 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         try {
             const client = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: config.googleClientId,
-                scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+                // UPGRADED SCOPE: Changed to drive to enable cross-script file visibility and deletion
+                scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email',
                 callback: async (response: any) => {
                     if (response.error) {
                         setIsSyncing(false);
