@@ -101,8 +101,7 @@ const MASTER_FILE_NAME = "AEWORKS_MASTER_VAULT.json";
 const INBOX_FOLDER_NAME = "AEWORKS_INBOX";
 
 const getDriveHeaders = (token: string) => ({
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
+    'Authorization': `Bearer ${token}`
 });
 
 export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void): Promise<{ success: boolean, count: number }> => {
@@ -112,93 +111,110 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
 
     try {
         console.log("Inbox Sync: Searching for folder", INBOX_FOLDER_NAME);
+        // Expanded query to handle visibility in shared environments
         const folderQuery = encodeURIComponent(`name='${INBOX_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-        const folderRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}`, { headers: getDriveHeaders(token) });
+        const folderRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: getDriveHeaders(token) });
         const folderData = await folderRes.json();
         
         if (!folderData.files || folderData.files.length === 0) {
-            console.warn("Inbox Sync: AEWORKS_INBOX folder not found.");
+            console.warn("Inbox Sync: AEWORKS_INBOX folder not found or inaccessible with current scope.");
             return { success: true, count: 0 };
         }
-        const folderId = folderData.files[0].id;
 
-        console.log("Inbox Sync: Checking files in folder", folderId);
-        const filesQuery = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
-        const filesRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${filesQuery}&fields=files(id, name)`, { headers: getDriveHeaders(token) });
-        const filesData = await filesRes.json();
-        
-        const files = filesData.files || [];
-        console.log(`Inbox Sync: Found ${files.length} files to process.`);
-        if (files.length === 0) return { success: true, count: 0 };
-
-        let processedCount = 0;
+        let totalProcessed = 0;
         const projects = getData<any>('projects');
         const unassigned = getData<any>('unassignedFeedback');
         let projectsUpdated = false;
         let unassignedUpdated = false;
-
         const normalize = (s: string) => s.replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
-        for (const file of files) {
-            try {
-                console.log(`Inbox Sync: Downloading ${file.name} (${file.id})...`);
-                const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: getDriveHeaders(token) });
-                const feedbackData = await contentRes.json();
+        // Process all folders matching the name (in case of duplicates in Drive)
+        for (const folder of folderData.files) {
+            console.log(`Inbox Sync: Checking files in folder ID: ${folder.id}`);
+            const filesQuery = encodeURIComponent(`'${folder.id}' in parents and trashed=false`);
+            const filesRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${filesQuery}&fields=files(id, name, mimeType)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: getDriveHeaders(token) });
+            const filesData = await filesRes.json();
+            
+            const files = filesData.files || [];
+            if (files.length === 0) continue;
 
-                if (!feedbackData || !feedbackData.code) {
-                    console.error("Inbox Sync: Invalid feedback packet format in file", file.name);
-                    continue;
-                }
+            for (const file of files) {
+                try {
+                    console.log(`Inbox Sync: Attempting download for ${file.name} (ID: ${file.id}, Type: ${file.mimeType})`);
+                    
+                    const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: getDriveHeaders(token) });
+                    if (!contentRes.ok) {
+                        console.error(`Inbox Sync: Download failed for ${file.name}. Status: ${contentRes.status}`);
+                        continue;
+                    }
 
-                const incomingNormal = normalize(feedbackData.code);
-                const incomingBase = normalize(feedbackData.code.split('.')[0]);
+                    const rawText = await contentRes.text();
+                    let feedbackData;
+                    try {
+                        feedbackData = JSON.parse(rawText.trim());
+                    } catch (parseErr) {
+                        console.error(`Inbox Sync: JSON parse error in ${file.name}. Content may be corrupted or not valid JSON.`);
+                        continue;
+                    }
 
-                const projIdx = projects.findIndex((p: any) => {
-                    const localNormal = normalize(p.projectCode || '');
-                    const localBase = normalize((p.projectCode || '').split('.')[0]);
-                    return localNormal === incomingNormal || localBase === incomingBase;
-                });
-                
-                if (projIdx > -1) {
-                    const project = projects[projIdx];
-                    project.trackingData = {
-                        ...(project.trackingData || {}),
-                        customerFeedback: feedbackData.feedback,
-                        feedbackStatus: 'received'
-                    };
-                    project.updatedAt = new Date().toISOString();
-                    projectsUpdated = true;
-                    if (onNewFeedback) onNewFeedback(project.projectCode);
-                    console.log(`Inbox Sync: Successfully matched and updated project ${project.projectCode}`);
-                } else {
-                    console.warn(`Inbox Sync: No project match found for code ${feedbackData.code}. Storing as unassigned.`);
-                    unassigned.push({
-                        id: generateId(),
-                        originalCode: feedbackData.code,
-                        feedback: feedbackData.feedback,
-                        receivedAt: new Date().toISOString()
+                    if (!feedbackData || !feedbackData.code) {
+                        console.error("Inbox Sync: Missing 'code' field in feedback packet:", file.name);
+                        continue;
+                    }
+
+                    const incomingNormal = normalize(feedbackData.code);
+                    const incomingBase = normalize(feedbackData.code.split('.')[0]);
+
+                    const projIdx = projects.findIndex((p: any) => {
+                        const localNormal = normalize(p.projectCode || '');
+                        const localBase = normalize((p.projectCode || '').split('.')[0]);
+                        return localNormal === incomingNormal || localBase === incomingBase;
                     });
-                    unassignedUpdated = true;
-                }
+                    
+                    if (projIdx > -1) {
+                        const project = projects[projIdx];
+                        project.trackingData = {
+                            ...(project.trackingData || {}),
+                            customerFeedback: feedbackData.feedback,
+                            feedbackStatus: 'received'
+                        };
+                        project.updatedAt = new Date().toISOString();
+                        projectsUpdated = true;
+                        if (onNewFeedback) onNewFeedback(project.projectCode);
+                        console.log(`Inbox Sync: Matched project ${project.projectCode} from ${file.name}`);
+                    } else {
+                        console.warn(`Inbox Sync: Orphan feedback found (${feedbackData.code}). Relocating to Unassigned.`);
+                        unassigned.push({
+                            id: generateId(),
+                            originalCode: feedbackData.code,
+                            feedback: feedbackData.feedback,
+                            receivedAt: new Date().toISOString()
+                        });
+                        unassignedUpdated = true;
+                    }
 
-                // DELETE from Drive as we have successfully ingested the data into local state
-                console.log(`Inbox Sync: Deleting processed file from Drive: ${file.id}`);
-                await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, { method: 'DELETE', headers: getDriveHeaders(token) });
-                processedCount++;
-            } catch (e) {
-                console.error(`Inbox Sync: File processing failed for ${file.id}:`, e);
+                    // Force Delete from Drive once safely ingested to local storage
+                    console.log(`Inbox Sync: Purging processed file from Drive: ${file.id}`);
+                    const delRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?supportsAllDrives=true`, { method: 'DELETE', headers: getDriveHeaders(token) });
+                    if (delRes.ok) totalProcessed++;
+                } catch (e) {
+                    console.error(`Inbox Sync: Critical failure processing file ${file.id}:`, e);
+                }
             }
         }
 
         if (projectsUpdated) saveData('projects', projects);
         if (unassignedUpdated) saveData('unassignedFeedback', unassigned);
         
-        // Push merged state to cloud vault immediately
-        if (projectsUpdated || unassignedUpdated) await pushToCloud();
+        // Immediate broadcast and cloud push
+        if (projectsUpdated || unassignedUpdated) {
+            window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key: 'projects' } }));
+            await pushToCloud();
+        }
         
-        return { success: true, count: processedCount };
+        return { success: true, count: totalProcessed };
     } catch (err) {
-        console.error("Inbox Sync: Fatal error:", err);
+        console.error("Inbox Sync: Fatal communication error:", err);
         return { success: false, count: 0 };
     }
 };
@@ -210,7 +226,7 @@ export const syncWithCloud = async (providedToken?: string, onNewFeedback?: (cod
 
     try {
         const query = encodeURIComponent(`name='${MASTER_FILE_NAME}' and trashed=false`);
-        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)`, { headers: getDriveHeaders(token) });
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id, name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: getDriveHeaders(token) });
         const searchData = await searchRes.json();
         const foundFile = (searchData.files || [])[0];
 
@@ -231,7 +247,7 @@ export const syncWithCloud = async (providedToken?: string, onNewFeedback?: (cod
 
         updateSystemMeta({ driveFileId: foundFile.id, driveAccessToken: token, lastCloudSync: new Date().toISOString() });
         
-        // Check inbox for new feedback entries
+        // Always attempt an inbox scrub after main sync
         await syncInboxFeedback(onNewFeedback);
         
         window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key: 'all' } }));
@@ -253,16 +269,20 @@ export const pushToCloud = async (): Promise<{success: boolean, message: string}
         let fileId = meta.driveFileId;
 
         if (!fileId) {
-            const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-                method: 'POST', headers: getDriveHeaders(token), body: JSON.stringify(metadata)
+            const createRes = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
+                method: 'POST', 
+                headers: { ...getDriveHeaders(token), 'Content-Type': 'application/json' }, 
+                body: JSON.stringify(metadata)
             });
             const createData = await createRes.json();
             fileId = createData.id;
             updateSystemMeta({ driveFileId: fileId });
         }
 
-        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-            method: 'PATCH', headers: getDriveHeaders(token), body: JSON.stringify(fullDB)
+        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&supportsAllDrives=true`, {
+            method: 'PATCH', 
+            headers: { ...getDriveHeaders(token), 'Content-Type': 'application/json' }, 
+            body: JSON.stringify(fullDB)
         });
 
         updateSystemMeta({ lastCloudSync: new Date().toISOString() });
