@@ -96,13 +96,25 @@ const MainLayout: React.FC<{onBack?: () => void}> = ({ onBack }) => {
         setCurrentProject(project);
     }, []);
 
+    const deleteProject = useCallback((projectCode: string) => {
+        const existing = db.getData<Project>('projects');
+        const updated = existing.filter(p => p.projectCode !== projectCode);
+        db.saveData('projects', updated);
+        setProjects(updated);
+        showNotification(`Project ${projectCode} purged locally. Click COMMIT to sync deletion to the Cloud Vault.`, 'warning');
+        
+        if (currentProject.projectCode === projectCode) {
+            setCurrentProject(createInitialProject(defaultCostingVariables));
+        }
+    }, [currentProject, defaultCostingVariables, showNotification]);
+
     const projectContextValue = useMemo(() => ({
         currentProject, setCurrentProject, clients, setClients, contacts, setContacts,
         centres, setCentres, framingMaterials, setFramingMaterials, finishMaterials, setFinishMaterials,
         projects, setProjects, defaultCostingVariables, setDefaultCostingVariables,
-        updateProject, updateGlobalDefaults: (v: any) => db.saveData('defaultCostingVariables', [v]),
+        updateProject, deleteProject, updateGlobalDefaults: (v: any) => db.saveData('defaultCostingVariables', [v]),
         resetProject: () => setCurrentProject(createInitialProject(defaultCostingVariables))
-    }), [currentProject, clients, contacts, centres, framingMaterials, finishMaterials, projects, defaultCostingVariables, updateProject]);
+    }), [currentProject, clients, contacts, centres, framingMaterials, finishMaterials, projects, defaultCostingVariables, updateProject, deleteProject]);
 
     const isFullWidth = view === View.TRACKER || view === View.FEEDBACK_JOURNAL;
 
@@ -115,7 +127,7 @@ const MainLayout: React.FC<{onBack?: () => void}> = ({ onBack }) => {
                     {view !== View.TRACKER && view !== View.FEEDBACK_JOURNAL && (
                         <StatusBar statusValue={parseInt(currentProject.projectStatus, 10)} onSetStatus={(v) => updateProject({...currentProject, projectStatus: v.toString()})} />
                     )}
-                    <Toolbar setView={setView} onHome={onBack} />
+                    <Toolbar setView={setView} onBack={onBack} />
                 </div>
                 <main className="flex-grow overflow-hidden relative">
                     {view === View.DASHBOARD && <TabContainer />}

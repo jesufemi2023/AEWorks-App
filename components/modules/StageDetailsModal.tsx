@@ -24,7 +24,6 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
     const [workerRatings, setWorkerRatings] = useState<Record<string, number>>({});
     const [showVerificationInput, setShowVerificationInput] = useState(false);
     
-    // Derived data for auto-filling
     const [autoData, setAutoData] = useState({
         calculatedCost: 0,
         calculatedVolume: 0,
@@ -80,15 +79,14 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
                 return;
             }
             
-            // Auto-Import Feedback Data
             setFormData(prev => ({ 
                 ...prev, 
                 customerFeedback: decoded.feedback,
-                feedbackStatus: 'received' // Awaiting worker confirmation
+                feedbackStatus: 'received'
             }));
             setVerificationToken('');
             setShowVerificationInput(false);
-            showNotification("Manual token validated. Please review and confirm the feedback.");
+            showNotification("Manual token validated. Project Closeout ACTIVATED.");
         } catch (e) {
             alert("Invalid Security Token. Please ensure the full string was pasted.");
         }
@@ -109,7 +107,7 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
             feedbackStatus: 'verified' 
         }));
         
-        showNotification("Acceptance Protocol Verified. Final Project Closeout AUTHORIZED.");
+        showNotification("Acceptance Protocol Verified.");
     };
 
     const handleUpdateWorkerRating = (workerId: string, rating: number) => {
@@ -122,7 +120,6 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
             rating
         }));
 
-        // Push ratings to global contact registry
         if (workerEvaluations.length > 0 && formData.feedbackStatus === 'verified') {
             const currentContacts = db.getData<Contact>('contacts');
             const updatedContacts = currentContacts.map(c => {
@@ -139,10 +136,7 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
         }
 
         let newStatus = project.projectStatus;
-        const isFullyUnlocked = formData.feedbackStatus === 'verified';
-        
-        // Final stage check: If verified and critical boxes are checked, move to 100%
-        if (isFullyUnlocked && 
+        if (formData.feedbackStatus === 'verified' && 
             formData.shipmentApproved && 
             formData.projectSignoff && 
             formData.balanceConfirmed && 
@@ -171,6 +165,7 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
     const statusValue = parseInt(project.projectStatus);
     const isVerified = formData.feedbackStatus === 'verified';
     const isReceived = formData.feedbackStatus === 'received';
+    const hasFeedback = isReceived || isVerified;
 
     const ApprovalToggle = ({ label, field, icon, disabled = false }: { label: string, field: keyof ProjectTrackingData, icon: string, disabled?: boolean }) => (
         <div className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${formData[field] ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'} ${disabled ? 'opacity-30 grayscale pointer-events-none' : 'hover:border-slate-300'}`}>
@@ -204,16 +199,18 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
                                 <Icon name={isReceived ? "fas fa-envelope-open-text" : "fas fa-lock"} />
                             </div>
                             <div className="text-center md:text-left">
-                                <h4 className="text-2xl font-black uppercase tracking-tighter leading-none">{isReceived ? "Feedback Received" : "Operational Lock Active"}</h4>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Closeout requires verified customer acceptance protocol.</p>
+                                <h4 className="text-2xl font-black uppercase tracking-tighter leading-none">{isReceived ? "Feedback Ingested" : "Awaiting Client Acceptance"}</h4>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+                                    {isReceived ? "Customer feedback matched automatically. Please verify content below." : "Closeout requires a digital signature via the Handover Portal."}
+                                </p>
                             </div>
                         </div>
 
                         {isReceived ? (
                             <div className="bg-white/5 p-6 rounded-[2rem] border border-white/10 animate-fade-in">
                                 <div className="flex justify-between items-start mb-6">
-                                    <h5 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">Customer Review Received</h5>
-                                    <div className="bg-amber-500 text-slate-900 px-3 py-1 rounded-full text-[9px] font-black uppercase">Pending Internal Confirmation</div>
+                                    <h5 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">Customer Quality Review</h5>
+                                    <div className="bg-amber-500 text-slate-900 px-3 py-1 rounded-full text-[9px] font-black uppercase">Unverified Signature</div>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                                     {[
@@ -232,7 +229,7 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
                                     "{formData.customerFeedback?.comments || 'No comment provided.'}"
                                 </div>
                                 <Button onClick={handleWorkerConfirmFeedback} variant="primary" className="w-full py-4 text-[10px] font-black uppercase tracking-widest bg-emerald-600 hover:bg-emerald-700 shadow-xl shadow-emerald-900/40 border-none">
-                                    Confirm Feedback & Unlock Stage
+                                    Confirm Verified Feedback
                                 </Button>
                             </div>
                         ) : (
@@ -247,14 +244,14 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
                                             className="w-full p-4 bg-slate-900 border border-slate-800 rounded-2xl text-xs font-mono font-bold text-blue-400 outline-none focus:border-blue-500"
                                         />
                                         <div className="flex gap-2">
-                                            <Button onClick={handleVerifyToken} variant="primary" className="flex-grow py-3 text-[10px] font-black uppercase tracking-widest">Verify Manual Token</Button>
+                                            <Button onClick={handleVerifyToken} variant="primary" className="flex-grow py-3 text-[10px] font-black uppercase tracking-widest">Verify Token</Button>
                                             <button onClick={() => setShowVerificationInput(false)} className="px-6 text-[10px] font-black uppercase text-slate-500">Cancel</button>
                                         </div>
                                     </div>
                                 ) : (
                                     <div className="flex flex-col md:flex-row gap-3">
-                                        <Button onClick={handleGeneratePortalLink} variant="primary" icon="fas fa-link" className="flex-grow py-4 text-[10px] font-black uppercase tracking-widest">Generate Handover Portal</Button>
-                                        <Button onClick={() => setShowVerificationInput(true)} variant="warning" icon="fas fa-key" className="flex-grow py-4 text-[10px] font-black uppercase tracking-widest text-slate-900">Verify Manual Token</Button>
+                                        <Button onClick={handleGeneratePortalLink} variant="primary" icon="fas fa-link" className="flex-grow py-4 text-[10px] font-black uppercase tracking-widest">Generate Portal Link</Button>
+                                        <Button onClick={() => setShowVerificationInput(true)} variant="warning" icon="fas fa-key" className="flex-grow py-4 text-[10px] font-black uppercase tracking-widest text-slate-900">Enter Manual Token</Button>
                                     </div>
                                 )}
                             </div>
@@ -281,8 +278,8 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
                     </div>
                 )}
 
-                {/* Operations Checklist */}
-                <div className={`grid grid-cols-1 lg:grid-cols-2 gap-8 ${!isVerified ? 'opacity-30 grayscale pointer-events-none' : 'animate-fade-in'}`}>
+                {/* Operations Checklist - UNLOCKED ONCE FEEDBACK IS RECEIVED */}
+                <div className={`grid grid-cols-1 lg:grid-cols-2 gap-8 ${!hasFeedback ? 'opacity-30 grayscale pointer-events-none' : 'animate-fade-in'}`}>
                     <div className="space-y-4 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                         <h5 className="text-[11px] font-black uppercase text-slate-400 tracking-widest border-b pb-3 mb-2">Internal Financials</h5>
                         <ApprovalToggle label="Approve Team Disbursal" field="teamPaymentsApproved" icon="fas fa-hand-holding-usd" />
@@ -312,7 +309,7 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
                 </div>
 
                 {/* Performance Evaluation */}
-                {isVerified && assignedWorkers.length > 0 && (
+                {hasFeedback && assignedWorkers.length > 0 && (
                     <div className="bg-slate-50 p-8 rounded-[2.5rem] space-y-6 border border-slate-100 animate-fade-in">
                         <div className="flex justify-between items-center border-b border-slate-200 pb-4">
                             <h5 className="text-[11px] font-black uppercase text-slate-500 tracking-widest">Internal Team Performance</h5>
@@ -346,7 +343,7 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
                 )}
 
                 {/* Final Signature Section */}
-                <div className={`space-y-4 bg-slate-900 p-8 rounded-[2.5rem] text-white ${!isVerified ? 'opacity-30 grayscale pointer-events-none' : 'animate-fade-in'}`}>
+                <div className={`space-y-4 bg-slate-900 p-8 rounded-[2.5rem] text-white ${!hasFeedback ? 'opacity-30 grayscale pointer-events-none' : 'animate-fade-in'}`}>
                     <h5 className="text-[11px] font-black uppercase text-blue-400 tracking-[0.2em] mb-4">Final Ledger Audit</h5>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
@@ -583,9 +580,9 @@ const StageDetailsModal: React.FC<StageDetailsModalProps> = ({ isOpen, onClose, 
             </div>
             <div className="flex justify-between items-center pt-6 border-t border-slate-100 mt-2">
                 <div className="flex items-center gap-2.5">
-                    <div className={`w-3 h-3 rounded-full ${formData.stageApproved ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-amber-500 animate-pulse'}`}></div>
+                    <div className={`w-3 h-3 rounded-full ${(formData.stageApproved || hasFeedback) ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-amber-500 animate-pulse'}`}></div>
                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                        {formData.stageApproved ? 'Milestone Cleared' : 'Action Required'}
+                        {(formData.stageApproved || hasFeedback) ? 'State Cleared' : 'Action Required'}
                     </span>
                 </div>
                 <Button onClick={handleSave} variant="primary" icon="fas fa-server" className="px-10 py-4 text-[11px] uppercase font-black shadow-2xl shadow-blue-500/20 bg-slate-900 border-none hover:bg-blue-600 transition-all">Synchronize Tracking State</Button>

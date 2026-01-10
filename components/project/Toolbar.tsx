@@ -10,10 +10,11 @@ import * as db from '../../services/db';
 
 interface ToolbarProps {
     setView: (view: View) => void;
-    onHome?: () => void;
+    onBack?: () => void;
 }
 
-const Toolbar: React.FC<ToolbarProps> = ({ setView, onHome }) => {
+// Renamed onHome to onBack to match usage in MainLayout and fix TypeScript error
+const Toolbar: React.FC<ToolbarProps> = ({ setView, onBack }) => {
     const { 
         currentProject, projects, setProjects, setCurrentProject, resetProject,
         setClients, setContacts, setCentres, setFramingMaterials, setFinishMaterials,
@@ -185,8 +186,8 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView, onHome }) => {
         <>
             <div className="flex flex-row md:flex-wrap gap-1.5 mb-2 bg-white p-1.5 rounded-xl shadow-sm justify-start md:justify-between items-center relative z-[40] border border-slate-200">
                 <div className="flex flex-row flex-nowrap gap-1.5 items-center flex-grow overflow-x-auto no-scrollbar">
-                    {onHome && (
-                        <Button onClick={onHome} variant="outline" icon="fas fa-arrow-left" size="sm" className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black border-slate-300">
+                    {onBack && (
+                        <Button onClick={onBack} variant="outline" icon="fas fa-arrow-left" size="sm" className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black border-slate-300">
                             Dashboard
                         </Button>
                     )}

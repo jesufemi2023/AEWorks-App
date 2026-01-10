@@ -1,3 +1,4 @@
+
 import React, { createContext } from 'react';
 import { Project, Client, Contact, Centre, FramingMaterial, FinishMaterial, CostingVariables } from '../types';
 
@@ -19,6 +20,7 @@ interface ProjectContextType {
     defaultCostingVariables: CostingVariables;
     setDefaultCostingVariables: React.Dispatch<React.SetStateAction<CostingVariables>>;
     updateProject: (project: Project, shouldSyncToMasterList?: boolean) => void;
+    deleteProject: (projectCode: string) => void;
     updateGlobalDefaults: (vars: CostingVariables) => void;
     resetProject: () => void;
 }

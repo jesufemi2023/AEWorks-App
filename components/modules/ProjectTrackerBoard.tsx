@@ -9,16 +9,24 @@ import { useAppContext } from '../../hooks/useAppContext';
 import StageDetailsModal from './StageDetailsModal';
 
 const ProjectTrackerBoard: React.FC<{setView: (view: View) => void}> = ({ setView }) => {
-    const { projects, setCurrentProject, updateProject } = useProjectContext();
-    const { showNotification } = useAppContext();
+    const { projects, setCurrentProject, updateProject, deleteProject } = useProjectContext();
+    const { showNotification, currentUser } = useAppContext();
     const [filterText, setFilterText] = useState('');
     const [selectedStageProject, setSelectedStageProject] = useState<Project | null>(null);
+
+    const isViewer = currentUser?.role === 'viewer';
 
     const filteredProjects = useMemo(() => projects.filter(p => 
         (p.projName || '').toLowerCase().includes(filterText.toLowerCase()) ||
         (p.projectCode || '').toLowerCase().includes(filterText.toLowerCase()) ||
         (p.clientName || '').toLowerCase().includes(filterText.toLowerCase())
     ), [projects, filterText]);
+
+    const handleDelete = (projectCode: string) => {
+        if (window.confirm(`SECURITY PROTOCOL: Are you sure you want to permanently delete project ${projectCode}? This action cannot be undone.`)) {
+            deleteProject(projectCode);
+        }
+    };
 
     return (
         <div className="flex flex-col h-full bg-slate-100 overflow-hidden">
@@ -60,11 +68,20 @@ const ProjectTrackerBoard: React.FC<{setView: (view: View) => void}> = ({ setVie
                                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">{project.clientName}</p>
                                         
                                         <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setSelectedStageProject(project)} className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-lg transition-all ${isReceived ? 'bg-amber-500 text-white' : 'bg-slate-900 text-white hover:bg-blue-600'}`}>
-                                                    <Icon name="fas fa-info-circle" className="mr-1.5" /> Details
+                                            <div className="flex gap-1.5">
+                                                <button onClick={() => setSelectedStageProject(project)} className={`text-[9px] font-black uppercase px-2.5 py-1.5 rounded-lg transition-all ${isReceived ? 'bg-amber-500 text-white' : 'bg-slate-900 text-white hover:bg-blue-600'}`}>
+                                                    Details
                                                 </button>
-                                                <button onClick={() => { setCurrentProject(project); setView(View.DASHBOARD); }} className="text-[9px] font-black uppercase bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg hover:bg-slate-200">Open</button>
+                                                <button onClick={() => { setCurrentProject(project); setView(View.DASHBOARD); }} className="text-[9px] font-black uppercase bg-slate-100 text-slate-500 px-2.5 py-1.5 rounded-lg hover:bg-slate-200">Open</button>
+                                                {!isViewer && (
+                                                    <button 
+                                                        onClick={() => handleDelete(project.projectCode)}
+                                                        className="text-[9px] font-black uppercase text-red-400 px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                                                        title="Delete Project"
+                                                    >
+                                                        <Icon name="fas fa-trash-alt" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

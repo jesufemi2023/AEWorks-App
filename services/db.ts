@@ -111,13 +111,12 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
 
     try {
         console.log("Inbox Sync: Searching for folder", INBOX_FOLDER_NAME);
-        // Expanded query to handle visibility in shared environments
         const folderQuery = encodeURIComponent(`name='${INBOX_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
         const folderRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: getDriveHeaders(token) });
         const folderData = await folderRes.json();
         
         if (!folderData.files || folderData.files.length === 0) {
-            console.warn("Inbox Sync: AEWORKS_INBOX folder not found or inaccessible with current scope.");
+            console.warn("Inbox Sync: AEWORKS_INBOX folder not found or inaccessible.");
             return { success: true, count: 0 };
         }
 
@@ -128,9 +127,7 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
         let unassignedUpdated = false;
         const normalize = (s: string) => s.replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
-        // Process all folders matching the name (in case of duplicates in Drive)
         for (const folder of folderData.files) {
-            console.log(`Inbox Sync: Checking files in folder ID: ${folder.id}`);
             const filesQuery = encodeURIComponent(`'${folder.id}' in parents and trashed=false`);
             const filesRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${filesQuery}&fields=files(id, name, mimeType)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: getDriveHeaders(token) });
             const filesData = await filesRes.json();
@@ -140,27 +137,18 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
 
             for (const file of files) {
                 try {
-                    console.log(`Inbox Sync: Attempting download for ${file.name} (ID: ${file.id}, Type: ${file.mimeType})`);
-                    
                     const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { headers: getDriveHeaders(token) });
-                    if (!contentRes.ok) {
-                        console.error(`Inbox Sync: Download failed for ${file.name}. Status: ${contentRes.status}`);
-                        continue;
-                    }
+                    if (!contentRes.ok) continue;
 
                     const rawText = await contentRes.text();
                     let feedbackData;
                     try {
                         feedbackData = JSON.parse(rawText.trim());
                     } catch (parseErr) {
-                        console.error(`Inbox Sync: JSON parse error in ${file.name}. Content may be corrupted or not valid JSON.`);
                         continue;
                     }
 
-                    if (!feedbackData || !feedbackData.code) {
-                        console.error("Inbox Sync: Missing 'code' field in feedback packet:", file.name);
-                        continue;
-                    }
+                    if (!feedbackData || !feedbackData.code) continue;
 
                     const incomingNormal = normalize(feedbackData.code);
                     const incomingBase = normalize(feedbackData.code.split('.')[0]);
@@ -178,12 +166,17 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
                             customerFeedback: feedbackData.feedback,
                             feedbackStatus: 'received'
                         };
+                        
+                        // AUTO-ACTIVATE CLOSEOUT: Advance status to 100 if project was shipped (95)
+                        if (project.projectStatus === '95') {
+                            project.projectStatus = '100';
+                            console.log(`Inbox Sync: Auto-advanced project ${project.projectCode} to Closeout stage.`);
+                        }
+                        
                         project.updatedAt = new Date().toISOString();
                         projectsUpdated = true;
                         if (onNewFeedback) onNewFeedback(project.projectCode);
-                        console.log(`Inbox Sync: Matched project ${project.projectCode} from ${file.name}`);
                     } else {
-                        console.warn(`Inbox Sync: Orphan feedback found (${feedbackData.code}). Relocating to Unassigned.`);
                         unassigned.push({
                             id: generateId(),
                             originalCode: feedbackData.code,
@@ -193,12 +186,10 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
                         unassignedUpdated = true;
                     }
 
-                    // Force Delete from Drive once safely ingested to local storage
-                    console.log(`Inbox Sync: Purging processed file from Drive: ${file.id}`);
                     const delRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?supportsAllDrives=true`, { method: 'DELETE', headers: getDriveHeaders(token) });
                     if (delRes.ok) totalProcessed++;
                 } catch (e) {
-                    console.error(`Inbox Sync: Critical failure processing file ${file.id}:`, e);
+                    console.error(`Inbox Sync failure for file ${file.id}:`, e);
                 }
             }
         }
@@ -206,7 +197,6 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
         if (projectsUpdated) saveData('projects', projects);
         if (unassignedUpdated) saveData('unassignedFeedback', unassigned);
         
-        // Immediate broadcast and cloud push
         if (projectsUpdated || unassignedUpdated) {
             window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key: 'projects' } }));
             await pushToCloud();
@@ -214,7 +204,6 @@ export const syncInboxFeedback = async (onNewFeedback?: (code: string) => void):
         
         return { success: true, count: totalProcessed };
     } catch (err) {
-        console.error("Inbox Sync: Fatal communication error:", err);
         return { success: false, count: 0 };
     }
 };
@@ -247,7 +236,6 @@ export const syncWithCloud = async (providedToken?: string, onNewFeedback?: (cod
 
         updateSystemMeta({ driveFileId: foundFile.id, driveAccessToken: token, lastCloudSync: new Date().toISOString() });
         
-        // Always attempt an inbox scrub after main sync
         await syncInboxFeedback(onNewFeedback);
         
         window.dispatchEvent(new CustomEvent('aeworks_db_update', { detail: { key: 'all' } }));
