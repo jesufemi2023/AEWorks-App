@@ -51,10 +51,10 @@ const ProjectListModal: React.FC<ProjectListModalProps> = ({ isOpen, onClose, on
                             </div>
                             
                             {!isViewer && (
-                                <div className="pl-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="pl-4">
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); handleDelete(project.projectCode); }} 
-                                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        className="p-2.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                         title="Delete Project Permanently"
                                     >
                                         <Icon name="fas fa-trash-alt" />

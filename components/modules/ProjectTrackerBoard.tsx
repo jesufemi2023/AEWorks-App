@@ -68,7 +68,7 @@ const ProjectTrackerBoard: React.FC<{setView: (view: View) => void}> = ({ setVie
                                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">{project.clientName}</p>
                                         
                                         <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
-                                            <div className="flex gap-1.5">
+                                            <div className="flex gap-1.5 items-center">
                                                 <button onClick={() => setSelectedStageProject(project)} className={`text-[9px] font-black uppercase px-2.5 py-1.5 rounded-lg transition-all ${isReceived ? 'bg-amber-500 text-white' : 'bg-slate-900 text-white hover:bg-blue-600'}`}>
                                                     Details
                                                 </button>
@@ -76,7 +76,7 @@ const ProjectTrackerBoard: React.FC<{setView: (view: View) => void}> = ({ setVie
                                                 {!isViewer && (
                                                     <button 
                                                         onClick={() => handleDelete(project.projectCode)}
-                                                        className="text-[9px] font-black uppercase text-red-400 px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                                                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1"
                                                         title="Delete Project"
                                                     >
                                                         <Icon name="fas fa-trash-alt" />
