@@ -36,14 +36,12 @@ const App: React.FC = () => {
         setTimeout(() => setNotification(null), 4000);
     }, []);
 
-    // Resilient Background Sync Logic
     useEffect(() => {
         const triggerSync = async () => {
             const meta = db.getSystemMeta();
             if (navigator.onLine && meta.driveAccessToken) {
                 console.log("Auto Polling: Checking Cloud Vault & Inbox...");
                 try {
-                    // Corrected the number of arguments passed to syncWithCloud (was 3, should be 2)
                     await db.syncWithCloud(undefined, (code) => {
                         showNotification(`New Customer Feedback received for ${code}!`, 'warning');
                     });
@@ -60,7 +58,6 @@ const App: React.FC = () => {
         window.addEventListener('online', triggerSync);
         document.addEventListener('visibilitychange', handleVisibilityChange);
         
-        // Periodic background check (every 2 mins for collaboration and feedback)
         const interval = setInterval(triggerSync, 120000);
 
         return () => {
@@ -70,13 +67,11 @@ const App: React.FC = () => {
         };
     }, [showNotification]);
 
-    // Initialize Database
     useEffect(() => {
         const initDB = async () => {
             const meta = db.getSystemMeta();
             const existingUsers = db.getData<AuthUser>('users');
             
-            // Check for Portal Token in URL
             const urlParams = new URLSearchParams(window.location.search);
             const token = urlParams.get('p_feedback');
             if (token) {
@@ -84,7 +79,6 @@ const App: React.FC = () => {
                 setActiveModule('feedback-portal');
             }
 
-            // 1. Local Fallback Provisioning
             if (existingUsers.length === 0 && !meta.driveAccessToken) {
                 db.saveData('users', INITIAL_USER_DATA as any);
                 db.saveData('clients', INITIAL_CLIENTS_DATA as any);
@@ -94,7 +88,6 @@ const App: React.FC = () => {
                 db.saveData('finishMaterials', INITIAL_FINISH_DATA as any);
             }
 
-            // 2. Silent Cloud Pull on Boot
             if (navigator.onLine && meta.driveAccessToken) {
                 try {
                     await db.syncWithCloud();
@@ -119,6 +112,15 @@ const App: React.FC = () => {
         setActiveModule('dashboard');
     };
 
+    const handleNavigateFromLanding = (module: Module) => {
+        if (module === 'feedback-journal') {
+            localStorage.setItem('redirect_view', 'FEEDBACK_JOURNAL');
+            setActiveModule('project-board');
+        } else {
+            setActiveModule(module);
+        }
+    };
+
     const renderContent = () => {
         if (activeModule === 'feedback-portal' && portalToken) {
             return <PublicFeedbackPortal token={portalToken} />;
@@ -136,7 +138,7 @@ const App: React.FC = () => {
                 return <WorkManager onBack={() => setActiveModule('dashboard')} />;
             case 'dashboard':
             default:
-                return <LandingPage onNavigate={setActiveModule} onLogout={() => setCurrentUser(null)} />;
+                return <LandingPage onNavigate={handleNavigateFromLanding} onLogout={() => setCurrentUser(null)} />;
         }
     };
 

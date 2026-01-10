@@ -10,9 +10,10 @@ import * as db from '../../services/db';
 
 interface ToolbarProps {
     setView: (view: View) => void;
+    onHome?: () => void;
 }
 
-const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
+const Toolbar: React.FC<ToolbarProps> = ({ setView, onHome }) => {
     const { 
         currentProject, projects, setProjects, setCurrentProject, resetProject,
         setClients, setContacts, setCentres, setFramingMaterials, setFinishMaterials,
@@ -64,7 +65,6 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         try {
             const client = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: config.googleClientId,
-                // UPGRADED SCOPE: Changed to drive to enable cross-script file visibility and deletion
                 scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email',
                 callback: async (response: any) => {
                     if (response.error) {
@@ -119,7 +119,6 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         setIsCommitting(true);
         setCommitStatus('saving');
         
-        // 1. Save to local storage
         try {
             updateProject({ ...currentProject, updatedAt: new Date().toISOString() });
         } catch (e: any) {
@@ -134,14 +133,12 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
             setCommitStatus('syncing');
             showNotification("Synchronizing with cloud repository...", "warning");
             
-            // 2. Synchronize with Google Drive
             const cloudResult = await db.pushToCloud();
             
             if (cloudResult.success) {
                 showNotification(`SUCCESS: Project saved to Drive (${meta.connectedEmail})`, 'success');
                 setSyncError(false);
             } else {
-                // EXPLICIT FAILURE REPORTING: notification type 'error' for cloud failure
                 showNotification(`CLOUD REPOSITORY ERROR: ${cloudResult.message}. Local copy preserved.`, 'error');
                 setSyncError(true);
             }
@@ -188,6 +185,11 @@ const Toolbar: React.FC<ToolbarProps> = ({ setView }) => {
         <>
             <div className="flex flex-row md:flex-wrap gap-1.5 mb-2 bg-white p-1.5 rounded-xl shadow-sm justify-start md:justify-between items-center relative z-[40] border border-slate-200">
                 <div className="flex flex-row flex-nowrap gap-1.5 items-center flex-grow overflow-x-auto no-scrollbar">
+                    {onHome && (
+                        <Button onClick={onHome} variant="outline" icon="fas fa-arrow-left" size="sm" className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black border-slate-300">
+                            Dashboard
+                        </Button>
+                    )}
                     {!isViewer && (
                         <Button onClick={handleSaveProject} variant="primary" icon={isCommitting ? "fas fa-sync animate-spin" : "fas fa-save"} disabled={isCommitting} size="sm" className="whitespace-nowrap py-1.5 px-3 text-[10px] uppercase font-black">
                             {commitStatus === 'saving' ? 'Saving...' : commitStatus === 'syncing' ? 'Syncing...' : 'Commit'}

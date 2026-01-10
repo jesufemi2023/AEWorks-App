@@ -57,7 +57,6 @@ const MainLayout: React.FC<{onBack?: () => void}> = ({ onBack }) => {
 
     useEffect(() => {
         refreshLocalState();
-        // Listen for background automation updates
         window.addEventListener('aeworks_db_update', refreshLocalState);
         return () => window.removeEventListener('aeworks_db_update', refreshLocalState);
     }, [refreshLocalState]);
@@ -67,6 +66,16 @@ const MainLayout: React.FC<{onBack?: () => void}> = ({ onBack }) => {
         setDefaultCostingVariables(loadedDefaults);
         const autosaved = localStorage.getItem('autosave_current_project');
         if (autosaved) setCurrentProject(JSON.parse(autosaved));
+
+        // Handle direct navigation to Feedback Journal from Landing Page
+        const redirectView = localStorage.getItem('redirect_view');
+        if (redirectView === 'FEEDBACK_JOURNAL') {
+            setView(View.FEEDBACK_JOURNAL);
+            localStorage.removeItem('redirect_view');
+        } else if (redirectView === 'MANAGE_CENTRES') {
+            setView(View.MANAGE_CENTRES);
+            localStorage.removeItem('redirect_view');
+        }
     }, []);
 
     useEffect(() => {
@@ -106,7 +115,7 @@ const MainLayout: React.FC<{onBack?: () => void}> = ({ onBack }) => {
                     {view !== View.TRACKER && view !== View.FEEDBACK_JOURNAL && (
                         <StatusBar statusValue={parseInt(currentProject.projectStatus, 10)} onSetStatus={(v) => updateProject({...currentProject, projectStatus: v.toString()})} />
                     )}
-                    <Toolbar setView={setView} />
+                    <Toolbar setView={setView} onHome={onBack} />
                 </div>
                 <main className="flex-grow overflow-hidden relative">
                     {view === View.DASHBOARD && <TabContainer />}
@@ -116,6 +125,7 @@ const MainLayout: React.FC<{onBack?: () => void}> = ({ onBack }) => {
                     {view === View.MANAGE_CONTACTS && <ManageContactsPage goBack={() => setView(View.DASHBOARD)} />}
                     {view === View.MANAGE_MATERIALS && <ManageMaterialsPage goBack={() => setView(View.DASHBOARD)} />}
                     {view === View.MANAGE_USERS && <ManageUsersPage goBack={() => setView(View.DASHBOARD)} />}
+                    {view === View.MANAGE_CENTRES && <ManageCentresPage goBack={() => setView(View.DASHBOARD)} />}
                 </main>
                 <ForcePasswordChangeModal isOpen={isForcePasswordChangeOpen} onClose={() => setIsForcePasswordChangeOpen(false)} />
             </div>
